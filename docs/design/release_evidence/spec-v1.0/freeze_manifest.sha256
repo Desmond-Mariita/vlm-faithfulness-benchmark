@@ -1,0 +1,8 @@
+# Freeze manifest for Benchmark Specification v1.0
+#
+# Freeze commit: 75e0320
+# Freeze tag: benchmark-spec-v1.0-freeze
+#
+# The validated hash inventory for the frozen normative set is recorded in:
+#   docs/design/release_evidence/spec-v1.0/normative_file_manifest.tsv
+# This manifest is the release-evidence pointer for the frozen set.

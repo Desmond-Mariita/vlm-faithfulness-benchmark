@@ -1,0 +1,26 @@
+cff-version: 1.2.0
+message: "If you use or build on this benchmark specification, please cite it as below."
+title: "VLM Faithfulness Benchmark — Specification"
+type: software
+authors:
+  - family-names: "Mariita"
+    given-names: "Desmond"
+    email: "dmariita@keragita.com"
+version: "v1.0"
+date-released: "2026-07-06"
+repository-code: "https://github.com/Desmond-Mariita/vlm-faithfulness-benchmark"
+abstract: >-
+  A benchmark specification for classifying the causal faithfulness of
+  vision-language-model rationales in visual question answering: formal
+  definitions, label semantics, data model, label-generation pipeline,
+  dataset specification, baseline-system contract, evaluation protocol,
+  and assurance obligations. Specification only; the corpus is a separate,
+  versioned release.
+keywords:
+  - faithfulness
+  - vision-language models
+  - visual question answering
+  - chain-of-thought
+  - rationales
+  - benchmark
+license: CC-BY-4.0

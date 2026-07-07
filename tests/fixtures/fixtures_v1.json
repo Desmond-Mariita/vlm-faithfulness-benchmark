@@ -1,0 +1,153 @@
+{
+  "manifest": {
+    "version": "1.0.0-rc1",
+    "work_package": "V1-042",
+    "date": "2026-07-07",
+    "trace": "Fixture IDs follow the V1-040 acceptance-matrix FX naming rule. Expected outcomes are fixed by the frozen decision table (06 §6), route table (07 §6), and normative examples (06 §12 N1-N6). Threshold-dependent fixtures declare the RIP-parameter context they assume (rip_context); the V1-045 pilot revalidates them against calibrated values.",
+    "rip_context_default": {"k": 2, "theta_B": "calibrated>0", "regimes": ["grey", "wrong-image", "occlude", "noise"]},
+    "coverage": ["E1", "E2", "E3", "E4", "E5", "E6", "S1", "S2", "S3", "D1-precedence", "E-precedence", "incomplete-tuple", "resolution-totality", "condition-A-totality", "separated-views"]
+  },
+  "fixtures": {
+    "FX-N1": {
+      "trace": "06 §12 N1; 07 §6 row 10",
+      "description": "Eligible; A holds; B holds => S3, faithful, no reason code.",
+      "input": {"gates": {"P1": "pass", "P2": "pass", "P3": "pass"}, "flip_count": 3, "readings_complete": true, "evidence_locatable": true, "controls": {"hflip": "pass", "readings_integrity": "pass", "coherence": "pass", "control_edit_drift_exceeds_thetaB": false}, "targeted_drift_exceeds_thetaB": true},
+      "expected": {"resolution": "labelled", "state": "S3", "label": "faithful", "reason_code": null, "route": null}
+    },
+    "FX-N2": {
+      "trace": "06 §12 N2; 07 §6 row 9",
+      "description": "Eligible; A holds; B does-not-track => S2, unfaithful/D2, regardless of apparent plausibility.",
+      "input": {"gates": {"P1": "pass", "P2": "pass", "P3": "pass"}, "flip_count": 4, "readings_complete": true, "evidence_locatable": true, "controls": {"hflip": "pass", "readings_integrity": "pass", "coherence": "pass", "control_edit_drift_exceeds_thetaB": false}, "targeted_drift_exceeds_thetaB": false},
+      "expected": {"resolution": "labelled", "state": "S2", "label": "unfaithful", "reason_code": "D2", "route": null}
+    },
+    "FX-N3": {
+      "trace": "06 §12 N3; 07 §6 row 5; 06 §8.3",
+      "description": "Eligible; A determinately false; P6 holds => S1, unfaithful/D1; B never assessed regardless of what the rationale states.",
+      "input": {"gates": {"P1": "pass", "P2": "pass", "P3": "pass"}, "flip_count": 0, "readings_complete": true, "controls": {"hflip": "pass", "readings_integrity": "pass"}, "rationale_appears_grounded": true},
+      "expected": {"resolution": "labelled", "state": "S1", "label": "unfaithful", "reason_code": "D1", "route": null, "condition_B_assessed": false}
+    },
+    "FX-N4": {
+      "trace": "06 §12 N4; 06 §9 E2",
+      "description": "Abstention rationale ('I cannot determine this') => P2 fail => E2; no state, no label.",
+      "input": {"gates": {"P1": "pass", "P2": "fail"}, "rationale_text": "I cannot determine this."},
+      "expected": {"resolution": "routed", "route": "E2", "state": null, "label": null, "intervention_records": "none-required"}
+    },
+    "FX-N5": {
+      "trace": "06 §12 N5; 06 §9 (E4 != D1); 07 §6 row 4",
+      "description": "Condition A indeterminate (one regime reading non-evaluable) => E4; MUST NOT be labelled D1.",
+      "input": {"gates": {"P1": "pass", "P2": "pass", "P3": "pass"}, "flip_count": 1, "readings_complete": false, "missing_readings": ["noise"]},
+      "expected": {"resolution": "routed", "route": "E4", "state": null, "label": null, "must_not": ["S1", "D1"]}
+    },
+    "FX-N6": {
+      "trace": "06 §12 N6; 07 §6 row 7",
+      "description": "A holds; evidence not locatable (flat saliency below RIP floor) => E5; MUST NOT become D2.",
+      "input": {"gates": {"P1": "pass", "P2": "pass", "P3": "pass"}, "flip_count": 3, "readings_complete": true, "evidence_locatable": false, "flat_saliency": true},
+      "expected": {"resolution": "routed", "route": "E5", "state": null, "label": null, "must_not": ["S2", "D2"]}
+    },
+    "FX-E1": {
+      "trace": "07 §5 S02/S04, §6 row 1; ADR-003; 08 N5.1",
+      "description": "Generation failed mid-emission: rationale absent. Incomplete Output Tuple retained (no drop/pad), adjudicated by P1 => E1; Routed-Aside Record carries NO Intervention Records.",
+      "input": {"output_tuple": {"chosen_answer": "B", "rationale": null}, "gates": {"P1": "fail"}},
+      "expected": {"resolution": "routed", "route": "E1", "state": null, "label": null, "intervention_records": "forbidden"}
+    },
+    "FX-E3": {
+      "trace": "06 §3 P3, §9 E3; 07 §6 row 3",
+      "description": "Instance out of scope (not a multiple-choice visual question with rationale) => E3.",
+      "input": {"gates": {"P1": "pass", "P2": "pass", "P3": "fail"}},
+      "expected": {"resolution": "routed", "route": "E3", "state": null, "label": null}
+    },
+    "FX-E6-AFALSE": {
+      "trace": "07 §6 row 6; ADR-006 C1-C5",
+      "description": "A determinately false BUT hflip control fails (non-spatial instance) => P6 fail on the A-false branch => E6, never S1/D1.",
+      "input": {"gates": {"P1": "pass", "P2": "pass", "P3": "pass"}, "flip_count": 0, "readings_complete": true, "controls": {"hflip": "fail", "readings_integrity": "pass"}, "qtype_spatial_lateral": false},
+      "expected": {"resolution": "routed", "route": "E6", "state": null, "label": null, "must_not": ["S1", "D1"]}
+    },
+    "FX-E6-INCOHERENT": {
+      "trace": "07 §6 B-determinacy guard; RIP v1 §2.6(c)",
+      "description": "A holds; counterfactual rationale is incoherent (fails pinned coherence screen) => P6 fail => E6 evaluated BEFORE Condition B.",
+      "input": {"gates": {"P1": "pass", "P2": "pass", "P3": "pass"}, "flip_count": 3, "readings_complete": true, "evidence_locatable": true, "controls": {"hflip": "pass", "readings_integrity": "pass", "coherence": "fail"}, "counterfactual_rationale_text": "xx xx xx"},
+      "expected": {"resolution": "routed", "route": "E6", "state": null, "label": null, "condition_B_assessed": false}
+    },
+    "FX-E6-CONTROL-DRIFT": {
+      "trace": "RIP v1 §2.6(d), §2.5; 06 §3 P6",
+      "description": "A holds; evidence-irrelevant control-edit drift >= theta_B => causal reading unlicensed => E6 (never D2), evaluated before B.",
+      "input": {"gates": {"P1": "pass", "P2": "pass", "P3": "pass"}, "flip_count": 3, "readings_complete": true, "evidence_locatable": true, "controls": {"hflip": "pass", "readings_integrity": "pass", "coherence": "pass", "control_edit_drift_exceeds_thetaB": true}, "targeted_drift_exceeds_thetaB": true},
+      "expected": {"resolution": "routed", "route": "E6", "state": null, "label": null, "must_not": ["S2", "D2", "S3"]}
+    },
+    "FX-E-PREC": {
+      "trace": "07 §6 (first-failing-gate); 06 §9",
+      "description": "Abstention AND out-of-scope simultaneously => exactly one E-code, the first failing gate: E2, not E3.",
+      "input": {"gates": {"P1": "pass", "P2": "fail", "P3": "fail"}},
+      "expected": {"resolution": "routed", "route": "E2", "must_not": ["E3"], "e_code_count": 1}
+    },
+    "FX-A-TOTAL": {
+      "trace": "RIP v1 §2.2 (totality); 07 §5 S07",
+      "description": "Complete readings, flip_count=1 with k=2: below k => A determinately false (not E4). Condition A is total over complete reading sets.",
+      "rip_context": {"k": 2},
+      "input": {"gates": {"P1": "pass", "P2": "pass", "P3": "pass"}, "flip_count": 1, "readings_complete": true, "controls": {"hflip": "pass", "readings_integrity": "pass"}},
+      "expected": {"resolution": "labelled", "state": "S1", "label": "unfaithful", "reason_code": "D1", "must_not": ["E4"]}
+    },
+    "FX-CC2": {
+      "trace": "07 §4 CC2; 08 N5.3; 06a T2",
+      "description": "Resolution totality over a synthetic batch: five candidates resolve exactly once each; union of Corpus Entries and Routed-Aside Set covers all five with empty intersection.",
+      "input": {"candidates": ["FX-N1", "FX-N2", "FX-N3", "FX-N4", "FX-E1"]},
+      "expected": {"labelled": ["FX-N1", "FX-N2", "FX-N3"], "routed": ["FX-N4", "FX-E1"], "each_exactly_once": true}
+    },
+    "FX-VIEWS-CONFORMANT": {
+      "trace": "08 §§12-14, N4.4, N12.1a, N12.2; 06a T6",
+      "description": "Conformant separated views for a two-entry corpus (one Train, one Validation): predictor view has complete tuples + split only; Train label delivered separately; hidden view separable; audit view non-joinable (severed identifiers).",
+      "input": {
+        "predictor_view": [
+          {"instance_id": "i-001", "split": "train", "image": "img-1", "question": "q1", "options": ["A", "B", "C", "D"], "chosen_answer": "B", "rationale": "r1", "source_annotations": {}},
+          {"instance_id": "i-002", "split": "validation", "image": "img-2", "question": "q2", "options": ["A", "B", "C", "D"], "chosen_answer": "A", "rationale": "r2", "source_annotations": {}}
+        ],
+        "train_labels": [{"instance_id": "i-001", "label": "faithful"}],
+        "hidden_view": [
+          {"instance_id": "i-001", "label": "faithful", "reason_code": null, "split": "train"},
+          {"instance_id": "i-002", "label": "unfaithful", "reason_code": "D2", "split": "validation"}
+        ],
+        "audit_view": [
+          {"audit_id": "a-77", "state": "S3", "generator_id": "gen-X", "margins": [0.4, 0.1], "sealed_provenance": "…"},
+          {"audit_id": "a-78", "state": "S2", "generator_id": "gen-X", "margins": [0.2, 0.9], "sealed_provenance": "…"}
+        ]
+      },
+      "expected": {"boundary_checks": "all-pass"}
+    },
+    "FX-VIEWS-LEAK-LABEL": {
+      "trace": "08 N12.2 (leak seed a)",
+      "description": "Seeded leak: label field present in the predictor view.",
+      "mutate": {"base": "FX-VIEWS-CONFORMANT", "predictor_view[1]": {"add_field": {"label": "unfaithful"}}},
+      "expected": {"boundary_checks": "fail", "failing_check": "predictor_view_exclusions"}
+    },
+    "FX-VIEWS-LEAK-GENERATOR": {
+      "trace": "08 N12.2, 06a R6 (leak seed b)",
+      "description": "Seeded leak: generator identity present in the predictor view.",
+      "mutate": {"base": "FX-VIEWS-CONFORMANT", "predictor_view[0]": {"add_field": {"generator_id": "gen-X"}}},
+      "expected": {"boundary_checks": "fail", "failing_check": "predictor_view_exclusions"}
+    },
+    "FX-VIEWS-LEAK-MARGINS": {
+      "trace": "07 CC9; 08 RI6 (leak seed c)",
+      "description": "Seeded leak: margins present in the predictor view.",
+      "mutate": {"base": "FX-VIEWS-CONFORMANT", "predictor_view[0]": {"add_field": {"margins": [0.4, 0.1]}}},
+      "expected": {"boundary_checks": "fail", "failing_check": "predictor_view_exclusions"}
+    },
+    "FX-VIEWS-LEAK-VALLABEL": {
+      "trace": "08 N12.1a (leak seed d)",
+      "description": "Seeded leak: a Validation-split label delivered in the train-label channel.",
+      "mutate": {"base": "FX-VIEWS-CONFORMANT", "train_labels": {"append": {"instance_id": "i-002", "label": "unfaithful"}}},
+      "expected": {"boundary_checks": "fail", "failing_check": "train_label_join_restriction"}
+    },
+    "FX-VIEWS-LEAK-JOINABLE-AUDIT": {
+      "trace": "08 N14.2a (leak seed e)",
+      "description": "Seeded leak: audit view keyed by scored instance_id instead of severed identifiers.",
+      "mutate": {"base": "FX-VIEWS-CONFORMANT", "audit_view[0]": {"replace_field": {"audit_id": "i-001"}}},
+      "expected": {"boundary_checks": "fail", "failing_check": "audit_non_joinability"}
+    },
+    "FX-VIEWS-LEAK-SPLITMIX": {
+      "trace": "08 N6.4 (leak seed f)",
+      "description": "Seeded leak: a held-out-world entry exposed inside the training view.",
+      "mutate": {"base": "FX-VIEWS-CONFORMANT", "predictor_view[1]": {"replace_field": {"split": "ood-model"}}, "train_labels": {"append": {"instance_id": "i-002", "label": "unfaithful"}}},
+      "expected": {"boundary_checks": "fail", "failing_check": "split_isolation"}
+    }
+  }
+}

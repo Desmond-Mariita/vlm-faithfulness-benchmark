@@ -67,12 +67,13 @@ def test_report_separates_verified_from_attested() -> None:
 
 @pytest.mark.parametrize("leak_id", LEAK_IDS)
 def test_seeded_leaks_fail_their_named_check(leak_id: str) -> None:
-    """Every seeded-leak fixture is caught by exactly the check it names."""
+    """Every seeded-leak fixture trips exactly the checks it names — no more, no fewer."""
     fx = FIXTURES[leak_id]
     base = FIXTURES[fx["mutate"]["base"]]["input"]
     bundle = _apply_mutations(base, fx["mutate"])
     report = run_boundary_checks(bundle)
     assert not report.all_passed(), f"{leak_id}: seeded leak was not detected"
-    assert fx["expected"]["failing_check"] in report.failing_checks(), (
-        f"{leak_id}: expected {fx['expected']['failing_check']}, got {report.failing_checks()}"
+    assert set(report.failing_checks()) == set(fx["expected"]["failing_checks"]), (
+        f"{leak_id}: expected exactly {fx['expected']['failing_checks']},"
+        f" got {report.failing_checks()}"
     )

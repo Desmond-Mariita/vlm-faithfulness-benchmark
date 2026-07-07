@@ -1,8 +1,8 @@
 """Boundary checks over separated release views (V1-043 skeleton).
 
-Mechanically verifies the information-boundary obligations the Dataset
-Specification places on the three release views (`08` §§12–14; acceptance
-matrix rows N12.1–N12.5, N12.1a, N13.2, N14.2a, N6.4, D-VIEW):
+Mechanically verifies four information-boundary obligations the Dataset
+Specification places on the separated release views (acceptance-matrix rows
+N12.2, N12.1a, N6.4, N14.2a):
 
 - predictor-view field exclusions (`08` N12.2),
 - Train-label join restriction (`08` N12.1a),
@@ -10,9 +10,12 @@ matrix rows N12.1–N12.5, N12.1a, N13.2, N14.2a, N6.4, D-VIEW):
 - audit-view non-joinability to scored instances (`08` N14.2a).
 
 The report separates **verified** results (mechanically checked here) from
-**attested** obligations (boundary properties no field scan can prove, e.g.
-statistical non-derivability of withheld artifacts, `08` N12.2 "not allow
-derivation of"), per the V1-043 verified-vs-attested reporting requirement.
+**attested** obligations (boundary properties no field scan can prove), per
+the V1-043 verified-vs-attested reporting requirement. Obligations this
+module neither verifies nor attests (e.g. `08` N12.1/N12.3 completeness,
+N12.4 annotation safety, N13.2 physical separability, design D-VIEW
+structural separation) are owned by other acceptance-matrix rows and are
+NOT claimed here.
 
 Engineering note: checks are pure functions over plain mappings so they can
 run against any serialized view without importing pipeline code — none
@@ -28,7 +31,8 @@ from typing import Any, Mapping, Sequence
 # predictor-visible view (`08` N12.2; `07` CC9; `06a` R6).
 FORBIDDEN_PREDICTOR_FIELDS: frozenset[str] = frozenset(
     {"label", "reason_code", "state", "behavioural_state", "generator_id", "margins",
-     "provenance", "sealed_provenance"}
+     "provenance", "sealed_provenance", "interventional_provenance",
+     "correct", "correctness", "answer_correct", "correct_real"}
 )
 
 #: Split names of the two non-held-out worlds (`08` N6.1).
@@ -66,6 +70,7 @@ class BoundaryReport:
         default=(
             "08 N12.2 non-derivability of withheld artifacts beyond field presence",
             "08 N12.5 strict-projection property of the predictor view",
+            "08 N13.2 physical/logical separability of the hidden view",
         )
     )
 
@@ -115,7 +120,7 @@ def check_train_label_join_restriction(
     violations = [
         f"label delivered for {lbl['instance_id']} in split '{split_of.get(lbl['instance_id'])}'"
         for lbl in train_labels
-        if split_of.get(lbl["instance_id"]) == "validation"
+        if split_of.get(lbl["instance_id"]) != "train"
     ]
     return CheckResult("train_label_join_restriction", not violations, tuple(violations))
 

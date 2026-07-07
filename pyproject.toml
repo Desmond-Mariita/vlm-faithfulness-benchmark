@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vlm-faithfulness-benchmark"
+version = "0.0.1"
+description = "Implementation scaffolding for the VLM Faithfulness Benchmark (Specification v1.0). No normative pipeline code before implementation authorization (release plan V1-044)."
+requires-python = ">=3.10"
+license = {text = "Apache-2.0"}
+dependencies = ["numpy>=1.24"]
+
+[project.optional-dependencies]
+pipeline = ["torch>=2.1", "transformers>=4.40", "bert-score>=0.3.13"]
+dev = ["pytest>=8", "ruff>=0.4", "mypy>=1.10"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "D"]
+pydocstyle.convention = "google"
+ignore = ["D104"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+files = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -28,9 +28,19 @@ class TestIdentity:
     """R1-R8 identity rules."""
 
     def test_r1_instance_identity_is_the_pair(self) -> None:
-        """R1: instance identity is (generator, source) and keys canonically."""
+        """R1: instance identity is (generator, source), keyed collision-free."""
+        import json
+
         iid = InstanceId(generator=GEN, source=SRC)
-        assert iid.key() == f"{GEN.key()}::{SRC.key()}"
+        parsed = json.loads(iid.key())
+        assert parsed["source"] == {"dataset": "aokvqa", "record_id": "r-0001"}
+        assert parsed["generator"]["model"] == "qwen3-vl-8b-instruct"
+
+    def test_keys_are_collision_free_with_separator_chars(self) -> None:
+        """F-09: separator characters inside component values cannot collide."""
+        a = GeneratorId.from_mapping({"m": "x;n=y", "n": "z"})
+        b = GeneratorId.from_mapping({"m": "x", "n": "y;n=z"})
+        assert a.key() != b.key()
 
     def test_r2_same_pair_same_identity(self) -> None:
         """R2/R7: the same pair yields an equal, stable identity."""
@@ -54,7 +64,7 @@ class TestIdentity:
 
     def test_r4_source_identity_is_external_anchored(self) -> None:
         """R4: dataset + the dataset's own record id, both mandatory."""
-        assert SRC.key() == "aokvqa/r-0001"
+        assert "aokvqa" in SRC.key() and "r-0001" in SRC.key()
         with pytest.raises(AssertionError):
             SourceRecordId(dataset="", record_id="x")
         with pytest.raises(AssertionError):
@@ -93,6 +103,12 @@ class TestBaselineDigest:
         regenerated = {"chosen_answer": "B", "rationale": "an umbrella is held by the man"}
         with pytest.raises(AssertionError, match="digest mismatch"):
             verify_baseline_digest(regenerated, recorded)
+
+    def test_non_ascii_content_digests_deterministically(self) -> None:
+        """Unicode rationale content round-trips stably (canonicalization pin)."""
+        t1 = {"chosen_answer": "café", "rationale": "l'homme tient un parapluie ☂"}
+        assert baseline_digest(t1) == baseline_digest(dict(reversed(list(t1.items()))))
+        verify_baseline_digest(t1, baseline_digest(t1))
 
     def test_non_string_designated_field_rejected(self) -> None:
         """Designated surface is textual; anything else is a caller defect."""

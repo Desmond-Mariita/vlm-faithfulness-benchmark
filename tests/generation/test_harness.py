@@ -10,7 +10,11 @@ from vlm_faithfulness_benchmark.generation.harness import (
     GenerationOutcome,
     run_s02,
 )
-from vlm_faithfulness_benchmark.generation.identity import GeneratorId, SourceRecordId
+from vlm_faithfulness_benchmark.generation.identity import (
+    GeneratorId,
+    InstanceId,
+    SourceRecordId,
+)
 from vlm_faithfulness_benchmark.ingestion.aokvqa import SourceRecord
 from vlm_faithfulness_benchmark.run_ledger import RunLedger
 
@@ -37,9 +41,11 @@ def test_commits_output_tuple_as_emitted_with_digest(tmp_path: Path) -> None:
         ledger,
     )
     assert result == {"committed": 1, "skipped": 0}
-    payload = ledger.payload("model=stub;revision=test::aokvqa/q-1::output_tuple")
+    key = f"{InstanceId(GEN_ID, _record(1).identity).key()}::output_tuple"
+    payload = ledger.payload(key)
     assert payload["output_tuple"] == {"chosen_answer": "a", "rationale": "because it is a"}
     assert len(payload["baseline_digest"]) == 64
+    assert payload["rip"] == "RIP-1.0.0"
     ledger.close()
 
 
@@ -47,7 +53,8 @@ def test_incomplete_generation_is_retained_not_dropped(tmp_path: Path) -> None:
     """S02-fail/ADR-003: absent rationale commits as an incomplete tuple."""
     ledger = RunLedger(tmp_path / "run.jsonl")
     run_s02([_record(1)], lambda r: GenerationOutcome("a", None), GEN_ID, ledger)
-    payload = ledger.payload("model=stub;revision=test::aokvqa/q-1::output_tuple")
+    key = f"{InstanceId(GEN_ID, _record(1).identity).key()}::output_tuple"
+    payload = ledger.payload(key)
     assert payload["output_tuple"]["rationale"] is None
     ledger.close()
 

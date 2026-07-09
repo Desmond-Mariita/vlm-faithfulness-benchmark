@@ -9,10 +9,12 @@ Operational pins consumed (RIP-1.0.0 §2.7, Appendix A):
 
 - P1: chosen answer parseable to exactly one option AND rationale non-empty
   under the pinned `08` N4.6 extraction.
-- P2: rationale matches no Appendix A abstention/refusal pattern and meets
-  the ≥5-token content floor.
-- P3: instance is a multiple-choice visual question with a rationale, in
-  the declared source scope.
+- P2: rationale matches no Appendix A abstention/refusal pattern, is not a
+  bare echo of the chosen answer option (the Appendix A echo rule — a
+  parameterized check, not a static pattern), and meets the ≥5-token
+  content floor. Tokenization for the floor is pinned as whitespace split.
+- P3: instance is a multiple-choice visual question with a rationale, and
+  its source dataset is in the declared source scope recorded for the run.
 """
 
 from __future__ import annotations
@@ -82,13 +84,15 @@ def _determine_p1(
 
 
 def _determine_p2(
-    rationale: str, registry: Sequence[re.Pattern[str]]
+    rationale: str, registry: Sequence[re.Pattern[str]], chosen_answer: str
 ) -> GateDetermination:
-    """P2 bona fide justification: no registry match; content floor met."""
+    """P2 bona fide justification: no registry match, no echo, floor met."""
     for pattern in registry:
         if pattern.search(rationale):
             return GateDetermination("P2", False, f"abstention pattern {pattern.pattern!r}")
-    token_count = len(rationale.split())
+    if rationale.strip().rstrip(".").lower() == chosen_answer.strip().lower():
+        return GateDetermination("P2", False, "echo of the answer option (Appendix A echo rule)")
+    token_count = len(rationale.split())  # pinned tokenizer: whitespace split
     if token_count < P2_MIN_TOKENS:
         return GateDetermination(
             "P2", False, f"content floor: {token_count} < {P2_MIN_TOKENS} tokens"
@@ -96,13 +100,17 @@ def _determine_p2(
     return GateDetermination("P2", True, f"bona fide; {token_count} tokens, no pattern match")
 
 
-def _determine_p3(options: Sequence[str], has_image: bool) -> GateDetermination:
-    """P3 scope: a multiple-choice visual question (structural check only)."""
+def _determine_p3(
+    options: Sequence[str], has_image: bool, dataset: str, declared_scope: frozenset[str]
+) -> GateDetermination:
+    """P3 scope: multiple-choice visual question from a declared source."""
     if not has_image:
         return GateDetermination("P3", False, "out of scope: no image reference")
     if len(options) < 2:
         return GateDetermination("P3", False, "out of scope: not multiple-choice")
-    return GateDetermination("P3", True, "in scope: multiple-choice visual question")
+    if dataset not in declared_scope:
+        return GateDetermination("P3", False, f"out of scope: dataset {dataset!r} not declared")
+    return GateDetermination("P3", True, "in scope: declared-source MC visual question")
 
 
 def evaluate_p_gates(
@@ -111,13 +119,16 @@ def evaluate_p_gates(
     options: Sequence[str],
     has_image: bool,
     registry: Sequence[re.Pattern[str]],
+    dataset: str,
+    declared_scope: frozenset[str],
 ) -> tuple[tuple[GateDetermination, ...], str | None]:
     """Run P1–P3 in the frozen gate order and name the single route, if any.
 
-    All three determinations are recorded (CC5 — evidence is retained even
-    past the first failure is NOT required by the specs; the first failing
-    gate claims the route and later gates are not evaluated, mirroring
-    `06` §9's deterministic precedence).
+    Gates run strictly in the frozen order; the first failing gate claims
+    the route and later gates are NOT evaluated (`06` §9 deterministic
+    precedence). Each executed gate's determination is returned with its
+    evidence (CC5 applies to executed determinations; unexecuted gates have
+    none).
 
     Args:
         chosen_answer: Emitted answer (None if generation omitted it).
@@ -126,6 +137,8 @@ def evaluate_p_gates(
         options: The instance's multiple-choice options.
         has_image: Whether the Source Record carries an image reference.
         registry: The pinned P2 pattern registry.
+        dataset: The instance's source dataset identifier.
+        declared_scope: Dataset identifiers declared in scope for this run.
 
     Returns:
         (determinations-in-order, e_code) where ``e_code`` is ``"E1"`` /
@@ -135,11 +148,11 @@ def evaluate_p_gates(
     p1 = _determine_p1(chosen_answer, rationale, options)
     if not p1.passed:
         return (p1,), "E1"
-    assert rationale is not None  # P1 passed ⇒ rationale present
-    p2 = _determine_p2(rationale, registry)
+    assert rationale is not None and chosen_answer is not None  # P1 passed
+    p2 = _determine_p2(rationale, registry, chosen_answer)
     if not p2.passed:
         return (p1, p2), "E2"
-    p3 = _determine_p3(options, has_image)
+    p3 = _determine_p3(options, has_image, dataset, declared_scope)
     if not p3.passed:
         return (p1, p2, p3), "E3"
     return (p1, p2, p3), None

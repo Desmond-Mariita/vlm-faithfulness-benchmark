@@ -1,5 +1,9 @@
 """Identity service — the sole mint for instance identities (`06a` §6 R1–R8).
 
+Keys are canonical JSON (sorted, compact) — component values may contain any
+character, so naive separator joins would be ambiguous (collision review
+finding F-09); JSON escaping makes the key bijective with the identity.
+
 Matrix rows: R1–R8, D-ID1, CC6. Components receive identities as opaque
 values and MUST NOT construct them ad hoc (design §4); this module is the
 only permitted constructor.
@@ -45,8 +49,11 @@ class SourceRecordId:
         assert self.record_id, "R4: source record identity must be non-empty"
 
     def key(self) -> str:
-        """Return the canonical string key ``<dataset>/<record_id>``."""
-        return f"{self.dataset}/{self.record_id}"
+        """Return the canonical, collision-free JSON key for this identity."""
+        import json
+
+        return json.dumps({"dataset": self.dataset, "record_id": self.record_id},
+                          sort_keys=True, separators=(",", ":"))
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,8 +98,10 @@ class GeneratorId:
         return cls(tuple(sorted(components.items())))
 
     def key(self) -> str:
-        """Return the canonical string key ``name=value;…`` in sorted order."""
-        return ";".join(f"{n}={v}" for n, v in self.components)
+        """Return the canonical, collision-free JSON key for this identity."""
+        import json
+
+        return json.dumps(dict(self.components), sort_keys=True, separators=(",", ":"))
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,9 +118,10 @@ class InstanceId:
     source: SourceRecordId
 
     def key(self) -> str:
-        """Return the canonical string key for this instance.
+        """Return the canonical, collision-free JSON key for this instance."""
+        import json
 
-        The key is the pair of component keys joined by ``"::"`` — stable,
-        collision-free (both sides are canonical), and usable as a store key.
-        """
-        return f"{self.generator.key()}::{self.source.key()}"
+        return json.dumps({"generator": dict(self.generator.components),
+                           "source": {"dataset": self.source.dataset,
+                                      "record_id": self.source.record_id}},
+                          sort_keys=True, separators=(",", ":"))

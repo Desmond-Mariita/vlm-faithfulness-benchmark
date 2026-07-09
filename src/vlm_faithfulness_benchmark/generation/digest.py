@@ -9,10 +9,12 @@ Algorithm (RIP-1.0.0 §2.8): SHA-256 over the canonical JSON form of the
 tuple's designated fields, with absent fields encoded as explicit ``null``
 so an incomplete tuple (ADR-003) digests deterministically.
 
-Canonicalization: JSON with sorted keys, no insignificant whitespace, UTF-8,
-and lowest-escape encoding — the RFC 8785 (JCS) subset sufficient for the
-designated field types (strings and null only; no floats, whose JCS number
-form would otherwise need care).
+Canonicalization (the pin IS this implementation, exactly — review F1
+retired the unverifiable "RFC 8785 subset" claim): Python
+``json.dumps(designated, sort_keys=True, separators=(",", ":"),
+ensure_ascii=False)`` encoded as UTF-8, over a value domain of strings and
+``null`` only. Any change to this expression is a new digest algorithm and
+therefore a new RIP version.
 """
 
 from __future__ import annotations

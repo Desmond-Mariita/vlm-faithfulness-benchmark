@@ -1,4 +1,4 @@
-"""Qwen3-VL generator adapter — the first composite generator subject.
+r"""Qwen3-VL generator adapter — the first composite generator subject.
 
 Matrix rows: S02-post, CC7 (same subject per call), R3 (identity names every
 component), N4.6 (pinned per-generator extraction contract).
@@ -6,14 +6,23 @@ component), N4.6 (pinned per-generator extraction contract).
 Loaded lazily so the package (and the whole test suite) never needs model
 weights; only real runs import torch/transformers through here.
 
-**Extraction contract ``aokvqa-mc-v1`` (pinned, `08` N4.6):** the prompt
+**Extraction contract ``aokvqa-mc-v1.1`` (pinned, `08` N4.6):** the prompt
 asks for the option letter on the first line and a rationale after the
-literal marker ``Rationale:``. Extraction maps the first ``A``-``H`` letter
-token on the first line to the option text (the chosen answer is the
-option's verbatim text), and takes everything after the first
-``Rationale:`` marker, stripped, as the rationale object. Absent letter or
-absent/empty rationale ⇒ the corresponding field is None (an incomplete
-Output Tuple, retained per ADR-003 — never repaired here).
+literal marker ``Rationale:``. Answer extraction applies three rules to the
+first line, in order, taking the first that fires (review F-01 retired the
+v1 free-floating letter match, which wrong-captured English articles like
+"A cigarette"):
+
+1. **Anchored letter with punctuation** — ``^\s*([A-Ha-h])[.):]`` (e.g.
+   ``"B. umbrella"``, ``"c)"``).
+2. **Bare letter line** — the first line is exactly one letter (e.g. ``"B"``).
+3. **Exact option text** — the first line, lowercased and stripped of a
+   trailing period, equals exactly one option's text.
+
+No rule firing ⇒ chosen answer is None. The rationale is everything after
+the first ``Rationale:`` marker, stripped; absent/empty ⇒ None. Absent
+fields make an incomplete Output Tuple, retained per ADR-003 — never
+repaired here.
 
 Decoding (RIP-1.0.0 §3): greedy, ``do_sample=False``, ``num_beams=1``,
 ``max_new_tokens=160`` (pinned in the identity components).
@@ -31,7 +40,7 @@ from vlm_faithfulness_benchmark.ingestion.aokvqa import SourceRecord
 
 __all__ = ["EXTRACTION_CONTRACT_ID", "build_prompt", "extract_outcome", "QwenGenerator"]
 
-EXTRACTION_CONTRACT_ID = "aokvqa-mc-v1"
+EXTRACTION_CONTRACT_ID = "aokvqa-mc-v1.1"
 _MODEL_ID = "Qwen/Qwen3-VL-8B-Instruct"
 _MAX_NEW_TOKENS = 160
 _RATIONALE_MARKER = "Rationale:"
@@ -67,12 +76,19 @@ def extract_outcome(generated_text: str, options: tuple[str, ...]) -> Generation
         the tuple stays incomplete rather than repaired (ADR-003/CC4).
     """
     first_line, _, _ = generated_text.strip().partition("\n")
-    letter_match = re.search(r"\b([A-H])\b", first_line.upper())
     chosen: str | None = None
+    letter_match = re.match(r"\s*([A-Ha-h])[.):]", first_line) or re.fullmatch(
+        r"\s*([A-Ha-h])\s*", first_line
+    )
     if letter_match is not None:
-        idx = ord(letter_match.group(1)) - ord("A")
+        idx = ord(letter_match.group(1).upper()) - ord("A")
         if 0 <= idx < len(options):
             chosen = options[idx]
+    else:
+        normalized = first_line.strip().rstrip(".").lower()
+        exact = [o for o in options if o.strip().lower() == normalized]
+        if len(exact) == 1:
+            chosen = exact[0]
     _, marker, tail = generated_text.partition(_RATIONALE_MARKER)
     rationale = tail.strip() if marker and tail.strip() else None
     return GenerationOutcome(chosen_answer=chosen, rationale=rationale)
@@ -101,7 +117,11 @@ class QwenGenerator:
             _MODEL_ID, dtype=torch.bfloat16, device_map="cuda:0"
         )
         self._model.eval()  # type: ignore[no-untyped-call]
-        self._revision = str(getattr(self._model.config, "_commit_hash", None) or "unpinned")
+        revision = getattr(self._model.config, "_commit_hash", None)
+        # Review F-02: a subject without a pinned weight revision is not a
+        # complete composite identity (R3) — halt rather than record "unpinned".
+        assert revision, "R3: weight revision hash unavailable; refusing unpinned identity"
+        self._revision = str(revision)
 
     def identity(self) -> GeneratorId:
         """The composite identity naming every component (R3, ADR-005)."""
@@ -111,6 +131,8 @@ class QwenGenerator:
                 "revision": self._revision,
                 "decoding": f"greedy;beams=1;max_new_tokens={_MAX_NEW_TOKENS}",
                 "extraction_contract": EXTRACTION_CONTRACT_ID,
+                "prompt_template": EXTRACTION_CONTRACT_ID,  # prompt is part of the contract
+                "image_preprocessing": "pil-rgb-native",
                 "dtype": "bfloat16",
             }
         )

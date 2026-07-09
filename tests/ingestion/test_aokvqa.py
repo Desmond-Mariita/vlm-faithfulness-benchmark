@@ -30,7 +30,7 @@ class TestNormalization:
         """Question, options, and identity are carried unchanged."""
         rec = normalize_aokvqa(RAW)
         assert isinstance(rec, SourceRecord)
-        assert rec.identity.key() == "aokvqa/q-123"
+        assert rec.identity.dataset == "aokvqa" and rec.identity.record_id == "q-123"
         assert rec.question == RAW["question"]
         assert rec.options == tuple(RAW["choices"])
         assert rec.image_ref == "coco/51234"

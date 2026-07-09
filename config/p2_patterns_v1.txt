@@ -1,5 +1,8 @@
 # P2 / coherence abstention-refusal pattern registry v1
-# Source of record: docs/design/RIP_v1_candidate.md Appendix A (RIP-1.0.0-rc1).
+# Source of record: docs/design/RIP_v1_candidate.md Appendix A (RIP-1.0.0).
+# NOTE: Appendix A's echo rule ("the exact answer option text alone") cannot be a
+# static pattern (it depends on the option text); it is realized as a parameterized
+# check in gating/gates.py (_determine_p2).
 # Case-insensitive; one pattern per line; '#' lines are comments.
 ^\s*$
 i cannot

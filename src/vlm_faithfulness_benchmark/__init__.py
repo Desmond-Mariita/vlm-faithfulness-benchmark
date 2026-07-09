@@ -17,4 +17,13 @@ formula, small testable units, and invariants encoded as asserts or tests
 mapped in the V1-040 acceptance matrix.
 """
 
+# Conformance halts throughout this package are assert statements (per the
+# code standard); running under `python -O` would strip them (review F2/F-06),
+# so optimized mode is refused outright.
+if not __debug__:  # pragma: no cover
+    raise RuntimeError(
+        "vlm_faithfulness_benchmark refuses to run under python -O: "
+        "conformance asserts would be stripped"
+    )
+
 __version__ = "0.0.1"

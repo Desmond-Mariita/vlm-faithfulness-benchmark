@@ -19,11 +19,14 @@ REGISTRY = load_pattern_registry(
 )
 OPTIONS = ("umbrella", "bat", "phone", "cup")
 GOOD_RATIONALE = "the man is holding an umbrella to shield himself from rain"
+SCOPE = frozenset({"aokvqa"})
 
 
 def test_all_gates_pass_on_bona_fide_tuple() -> None:
     """A complete, justified, in-scope tuple passes with no route."""
-    dets, e_code = evaluate_p_gates("umbrella", GOOD_RATIONALE, OPTIONS, True, REGISTRY)
+    dets, e_code = evaluate_p_gates(
+        "umbrella", GOOD_RATIONALE, OPTIONS, True, REGISTRY, "aokvqa", SCOPE
+    )
     assert e_code is None
     assert [d.gate for d in dets] == ["P1", "P2", "P3"]
     assert all(d.passed for d in dets)
@@ -34,18 +37,21 @@ class TestP1:
 
     def test_absent_rationale_routes_e1(self) -> None:
         """ADR-003: retained incomplete tuple fails P1, never dropped."""
-        dets, e_code = evaluate_p_gates("umbrella", None, OPTIONS, True, REGISTRY)
+        dets, e_code = evaluate_p_gates("umbrella", None, OPTIONS, True, REGISTRY, "aokvqa", SCOPE)
         assert e_code == "E1" and not dets[0].passed
 
     def test_unparseable_answer_routes_e1(self) -> None:
         """An answer matching zero options is not a complete chosen answer."""
-        _, e_code = evaluate_p_gates("banana", GOOD_RATIONALE, OPTIONS, True, REGISTRY)
+        _, e_code = evaluate_p_gates(
+            "banana", GOOD_RATIONALE, OPTIONS, True, REGISTRY, "aokvqa", SCOPE
+        )
         assert e_code == "E1"
 
     def test_answer_matching_two_options_routes_e1(self) -> None:
         """Exactly-one-option parse is required."""
         _, e_code = evaluate_p_gates(
-            "umbrella", GOOD_RATIONALE, ("umbrella", "Umbrella "), True, REGISTRY
+            "umbrella", GOOD_RATIONALE, ("umbrella", "Umbrella "), True, REGISTRY,
+            "aokvqa", SCOPE,
         )
         assert e_code == "E1"
 
@@ -63,32 +69,53 @@ class TestP2:
     )
     def test_registry_match_routes_e2(self, text: str) -> None:
         """Appendix A patterns fail P2 regardless of length."""
-        _, e_code = evaluate_p_gates("umbrella", text, OPTIONS, True, REGISTRY)
+        _, e_code = evaluate_p_gates("umbrella", text, OPTIONS, True, REGISTRY, "aokvqa", SCOPE)
         assert e_code == "E2"
 
     def test_below_floor_routes_e2(self) -> None:
         """RIP §2.7: fewer than five tokens is not a bona fide justification."""
-        _, e_code = evaluate_p_gates("umbrella", "holding an umbrella", OPTIONS, True, REGISTRY)
+        _, e_code = evaluate_p_gates(
+            "umbrella", "holding an umbrella", OPTIONS, True, REGISTRY, "aokvqa", SCOPE
+        )
         assert e_code == "E2"
 
     def test_correctness_plays_no_role(self) -> None:
         """ADR-004/CC1: a wrong-but-justified answer passes the gates."""
-        dets, e_code = evaluate_p_gates("bat", GOOD_RATIONALE, OPTIONS, True, REGISTRY)
+        dets, e_code = evaluate_p_gates(
+            "bat", GOOD_RATIONALE, OPTIONS, True, REGISTRY, "aokvqa", SCOPE
+        )
         assert e_code is None and all(d.passed for d in dets)
 
 
 class TestP3AndPrecedence:
     """FX-E3 and FX-E-PREC."""
 
+    def test_undeclared_dataset_routes_e3(self) -> None:
+        """P3 declared-scope membership (review F-08)."""
+        _, e_code = evaluate_p_gates(
+            "umbrella", GOOD_RATIONALE, OPTIONS, True, REGISTRY, "vcr", SCOPE
+        )
+        assert e_code == "E3"
+
+    def test_answer_echo_routes_e2(self) -> None:
+        """Appendix A echo rule: rationale == option text is not bona fide."""
+        _, e_code = evaluate_p_gates(
+            "umbrella", "Umbrella.", OPTIONS, True, REGISTRY, "aokvqa", SCOPE
+        )
+        assert e_code == "E2"
+
     def test_no_image_routes_e3(self) -> None:
         """Out of scope: not a visual question."""
-        _, e_code = evaluate_p_gates("umbrella", GOOD_RATIONALE, OPTIONS, False, REGISTRY)
+        _, e_code = evaluate_p_gates(
+            "umbrella", GOOD_RATIONALE, OPTIONS, False, REGISTRY, "aokvqa", SCOPE
+        )
         assert e_code == "E3"
 
     def test_first_failing_gate_claims_the_route(self) -> None:
         """FX-E-PREC: abstention AND out-of-scope => E2, not E3; one code only."""
         dets, e_code = evaluate_p_gates(
-            "umbrella", "I cannot determine this.", OPTIONS, False, REGISTRY
+            "umbrella", "I cannot determine this.", OPTIONS, False, REGISTRY,
+            "aokvqa", SCOPE,
         )
         assert e_code == "E2"
         assert [d.gate for d in dets] == ["P1", "P2"], "later gates not evaluated"

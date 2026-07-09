@@ -54,8 +54,14 @@ class ProvenanceEntry:
         Raises:
             AssertionError: If kind or producer is empty.
         """
-        assert self.kind, "provenance entry needs a kind"
-        assert self.producer, "provenance entry needs a producing stage (CC3)"
+        assert self.kind in ("observation", "determination"), (
+            f"unknown provenance entry kind {self.kind!r}"
+        )
+        import re
+
+        assert re.fullmatch(r"S\d{2}", self.producer), (
+            f"producer must be a stage id (CC3), got {self.producer!r}"
+        )
         object.__setattr__(self, "payload", MappingProxyType(dict(self.payload)))
 
 

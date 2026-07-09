@@ -129,7 +129,8 @@ def normalize_aokvqa(raw: Mapping[str, Any]) -> SourceRecord | IngestionExclusio
     if any(not str(c).strip() for c in choices):
         return IngestionExclusion(DATASET, record_id, "empty option text")
     gold_idx = raw.get("correct_choice_idx")
-    if not isinstance(gold_idx, int) or not 0 <= gold_idx < len(choices):
+    valid_idx = isinstance(gold_idx, int) and not isinstance(gold_idx, bool)
+    if not valid_idx or not 0 <= gold_idx < len(choices):  # type: ignore[operator]
         return IngestionExclusion(DATASET, record_id, "gold index missing or out of range")
 
     return SourceRecord(

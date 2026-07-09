@@ -63,10 +63,12 @@ class RunLedger:
         # A well-formed file ends with "\n", so the final split element is "".
         body, tail = raw_lines[:-1], raw_lines[-1]
         if tail:
-            # Roll the torn write back on disk (it was never a commit).
-            clean_prefix = raw[: len(raw) - len(tail)]
-            with open(self._path, "w", encoding="utf-8") as fh:
-                fh.write(clean_prefix)
+            # Roll the torn write back by TRUNCATING in place (review F-04:
+            # a rewrite could itself be torn and destroy committed records;
+            # truncation never touches the clean prefix bytes).
+            clean_len = len(raw.encode("utf-8")) - len(tail.encode("utf-8"))
+            with open(self._path, "rb+") as fh:
+                fh.truncate(clean_len)
                 fh.flush()
                 os.fsync(fh.fileno())
         for i, line in enumerate(body):

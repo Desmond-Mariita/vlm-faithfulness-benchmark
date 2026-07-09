@@ -24,7 +24,11 @@ from vlm_faithfulness_benchmark.generation.identity import GeneratorId, Instance
 from vlm_faithfulness_benchmark.ingestion.aokvqa import SourceRecord
 from vlm_faithfulness_benchmark.run_ledger import RunLedger
 
-__all__ = ["GenerationOutcome", "GeneratorFn", "run_s02"]
+__all__ = ["GenerationOutcome", "GeneratorFn", "RIP_ID", "run_s02"]
+
+#: The governing profile whose pins this harness realizes (matrix D-Q1 /
+#: N10.7 traceability; recorded in every commit payload).
+RIP_ID = "RIP-1.0.0"
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,6 +100,7 @@ def run_s02(
                 "generator": generator_id.key(),
                 "output_tuple": output_tuple,
                 "baseline_digest": baseline_digest(output_tuple),
+                "rip": RIP_ID,
             },
         )
         committed += 1

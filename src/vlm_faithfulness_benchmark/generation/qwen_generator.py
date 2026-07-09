@@ -94,11 +94,13 @@ class QwenGenerator:
 
         self._torch = torch
         self._image_root = image_root
-        self._processor = AutoProcessor.from_pretrained(_MODEL_ID)
+        # transformers' Auto* factories are untyped upstream; the boundary is
+        # confined to these three calls (mypy: no-untyped-call/misc).
+        self._processor = AutoProcessor.from_pretrained(_MODEL_ID)  # type: ignore[no-untyped-call]
         self._model = AutoModelForImageTextToText.from_pretrained(
             _MODEL_ID, dtype=torch.bfloat16, device_map="cuda:0"
         )
-        self._model.eval()
+        self._model.eval()  # type: ignore[no-untyped-call]
         self._revision = str(getattr(self._model.config, "_commit_hash", None) or "unpinned")
 
     def identity(self) -> GeneratorId:
@@ -143,7 +145,7 @@ class QwenGenerator:
             return_tensors="pt",
         ).to(self._model.device)
         with self._torch.inference_mode():
-            generated = self._model.generate(
+            generated = self._model.generate(  # type: ignore[misc]
                 **inputs,
                 do_sample=False,
                 num_beams=1,

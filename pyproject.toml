@@ -11,7 +11,7 @@ license = {text = "Apache-2.0"}
 dependencies = ["numpy>=1.24"]
 
 [project.optional-dependencies]
-pipeline = ["torch>=2.1", "transformers>=4.40", "bert-score>=0.3.13"]
+pipeline = ["torch>=2.1", "torchvision>=0.16", "transformers>=4.57", "accelerate>=1.0", "bert-score>=0.3.13"]
 dev = ["pytest>=8", "ruff>=0.4", "mypy>=1.10"]
 
 [tool.setuptools.packages.find]

@@ -33,3 +33,13 @@ Google-style docstrings, PEP 484 type hints everywhere, math implemented from
 scratch with the LaTeX formula in a comment directly above each implementation,
 small testable units, and invariants encoded as asserts or dedicated tests
 mapped in the V1-040 acceptance matrix.
+
+## GPU run discipline (binding)
+
+1. **Resume capability first.** Any script that touches the GPU must survive abrupt
+   power-off: atomic per-record commits (design §5.3) plus a durable run ledger; on
+   restart, committed records are skipped, never re-produced (`06a` R2/R5).
+2. **Minimal, short runs.** Smallest sample that answers the question; interruption
+   must lose at most the in-flight record.
+3. **Explicit go-ahead.** Every GPU run is proposed first (sample size, expected
+   wall-clock, resume behavior, budget-ledger line) and waits for maintainer approval.

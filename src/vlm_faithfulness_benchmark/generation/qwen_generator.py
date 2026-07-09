@@ -24,7 +24,6 @@ from __future__ import annotations
 import re
 import string
 from pathlib import Path
-from typing import Any
 
 from vlm_faithfulness_benchmark.generation.harness import GenerationOutcome
 from vlm_faithfulness_benchmark.generation.identity import GeneratorId

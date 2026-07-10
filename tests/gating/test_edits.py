@@ -56,14 +56,27 @@ def test_degenerate_region_is_conformance_error() -> None:
         apply_targeted_edit(_img(1), _img(2), _region((0, 0, 100, 20)), 0)
 
 
-def test_control_box_same_size_disjoint_far_corner() -> None:
-    """Control box matches size and lands in the farthest corner, disjoint."""
+def test_control_box_same_size_and_disjoint() -> None:
+    """Control box matches size, is disjoint, and maximizes center distance."""
     region = _region((0, 0, 16, 24))  # top-left evidence
     box = control_box(region, 64, 96)
-    assert box == (48, 72, 64, 96)  # bottom-right corner, same 16x24 size
-    et, el, eb, er = region.box
     ct, cl, cb, cr = box
+    assert (cb - ct, cr - cl) == (16, 24)
+    et, el, eb, er = region.box
     assert cb <= et or ct >= eb or cr <= el or cl >= er  # disjoint
+
+
+def test_control_box_disjoint_even_for_large_evidence_region() -> None:
+    """Review Blocker: a large evidence box must yield a DISJOINT placement."""
+    region = _region((0, 0, 60, 90))  # nearly fills a 64x96 image -> no fit
+    with pytest.raises(AssertionError, match="inapplicable"):
+        control_box(region, 64, 96)
+    region2 = _region((0, 0, 24, 96))  # full width, top strip; room only below
+    box = control_box(region2, 64, 96)
+    ct, cl, cb, cr = box
+    et, el, eb, er = region2.box
+    assert cb <= et or ct >= eb or cr <= el or cl >= er, "must be disjoint"
+    assert (cb - ct, cr - cl) == (24, 96)
 
 
 def test_control_box_inapplicable_when_evidence_fills_image() -> None:

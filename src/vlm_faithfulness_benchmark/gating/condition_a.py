@@ -44,7 +44,7 @@ class RegimeReading:
         return self.option_loglikelihoods is not None
 
     def argmax_option(self) -> int:
-        """Return the index of the highest-likelihood option.
+        """Return the index of the highest-likelihood option (first on ties).
 
         Raises:
             AssertionError: If the reading is non-evaluable.
@@ -52,6 +52,27 @@ class RegimeReading:
         assert self.option_loglikelihoods is not None, "non-evaluable reading has no argmax"
         scores = self.option_loglikelihoods
         return max(range(len(scores)), key=scores.__getitem__)
+
+    def baseline_held(self, baseline_index: int) -> bool:
+        """Return True iff the baseline option remains (co-)argmax.
+
+        Tie rule (pinned; review F1): a tie between the baseline option and
+        any other option counts as HELD — "ceases to be the argmax"
+        requires the baseline score to be strictly below some other
+        option's. This is symmetric in option order, unlike a first-index
+        argmax comparison.
+
+        Args:
+            baseline_index: The baseline chosen option index.
+
+        Raises:
+            AssertionError: If the reading is non-evaluable or the index is
+                out of range.
+        """
+        assert self.option_loglikelihoods is not None, "non-evaluable reading"
+        scores = self.option_loglikelihoods
+        assert 0 <= baseline_index < len(scores), "baseline index out of range"
+        return scores[baseline_index] >= max(scores)
 
 
 class ConditionAVerdict(Enum):
@@ -119,7 +140,7 @@ def determine_condition_a(
             ConditionAVerdict.INDETERMINATE, flip_count=-1, k=k, missing_regimes=non_evaluable
         )
     flip_count = sum(
-        1 for r in DESTRUCTIVE_REGIMES if readings[r].argmax_option() != baseline_chosen_index
+        1 for r in DESTRUCTIVE_REGIMES if not readings[r].baseline_held(baseline_chosen_index)
     )
     verdict = ConditionAVerdict.TRUE if flip_count >= k else ConditionAVerdict.FALSE
     return ConditionADetermination(verdict, flip_count=flip_count, k=k, missing_regimes=())

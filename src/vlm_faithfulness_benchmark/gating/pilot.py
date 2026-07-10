@@ -33,7 +33,11 @@ from vlm_faithfulness_benchmark.gating.edits import (
     control_box,
 )
 from vlm_faithfulness_benchmark.gating.gates import evaluate_p_gates
-from vlm_faithfulness_benchmark.gating.regimes import DESTRUCTIVE_REGIMES, apply_regime
+from vlm_faithfulness_benchmark.gating.regimes import (
+    DESTRUCTIVE_REGIMES,
+    REGIMES,
+    apply_regime,
+)
 from vlm_faithfulness_benchmark.gating.saliency import (
     GRID_COLS,
     GRID_ROWS,
@@ -70,6 +74,9 @@ class PilotIO:
         declared_scope: Dataset identifiers declared for this run.
         spatial_qtypes: Instance predicate for hflip inapplicability
             (pinned question-type mapping).
+        record_index_of: Record → its identity-sorted position in the FULL
+            dataset (review Major: seeds must be partition-independent, so
+            the batch position must never key a stream).
     """
 
     load_image: Callable[[SourceRecord], Image]
@@ -79,6 +86,7 @@ class PilotIO:
     registry: Sequence[re.Pattern[str]]
     declared_scope: frozenset[str]
     spatial_qtypes: Callable[[SourceRecord], bool]
+    record_index_of: Callable[[SourceRecord], int]
 
 
 def _observe_candidate(
@@ -115,7 +123,7 @@ def _observe_candidate(
     partner = io.load_partner_image(record)
 
     readings: dict[str, RegimeReading] = {}
-    for regime in (*DESTRUCTIVE_REGIMES, "hflip"):
+    for regime in REGIMES:  # all six, including `real` (RIP §2.1; review Major)
         variant = apply_regime(
             regime, image, record_index,
             partner_image=partner if regime == "wrong-image" else None,
@@ -133,13 +141,13 @@ def _observe_candidate(
     row["flip_count"] = sum(
         1
         for r in DESTRUCTIVE_REGIMES
-        if readings[r].argmax_option() != baseline_chosen_index
+        if not readings[r].baseline_held(baseline_chosen_index)
     )
     hflip = readings["hflip"]
     row["hflip"] = {
         "spatial_lateral": io.spatial_qtypes(record),
         "evaluable": hflip.evaluable(),
-        "persisted": hflip.evaluable() and hflip.argmax_option() == baseline_chosen_index,
+        "persisted": hflip.evaluable() and hflip.baseline_held(baseline_chosen_index),
     }
 
     # Localization sweep (always collected when flip_count >= min k could
@@ -151,10 +159,19 @@ def _observe_candidate(
         return row
     base = baseline_scores[baseline_chosen_index]
     drops = np.zeros((GRID_ROWS, GRID_COLS), dtype=np.float64)
+    sweep_evaluable = True
     for r in range(GRID_ROWS):
         for c in range(GRID_COLS):
             cell_scores = io.score_options(record, grid.occlude_cell(image, r, c))
-            drops[r, c] = 0.0 if cell_scores is None else base - cell_scores[baseline_chosen_index]
+            if cell_scores is None:  # never coerced to 0.0 (review Major)
+                sweep_evaluable = False
+                break
+            drops[r, c] = base - cell_scores[baseline_chosen_index]
+        if not sweep_evaluable:
+            break
+    if not sweep_evaluable:
+        row["saliency"] = None  # readings-integrity territory at labeling time
+        return row
     region = localize(drops, grid, _PILOT_SALIENCY_FLOOR)
     if region is None:
         row["saliency"] = {"max_drop": float(drops.max()), "locatable": False}
@@ -211,7 +228,8 @@ def run_pilot_observation(
         ``{"committed": n_new, "skipped": n_resumed, "missing_s02": n}``.
     """
     committed = skipped = missing = 0
-    for record_index, record in enumerate(records):
+    for record in records:
+        record_index = io.record_index_of(record)  # dataset-identity position
         instance = instance_of(record)
         key = f"{instance.key()}::pilot_obs"
         if ledger.is_committed(key):

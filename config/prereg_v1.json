@@ -1,14 +1,20 @@
 {
   "id": "prereg-v1",
-  "trace": "RIP-1.0.0 §5.1 (viability + separation rules) and §5.2 (calibration procedure). Committed BEFORE any pilot run — this file's presence in history before the pilot ledger is the pre-registration act. Values are recorded here and enter the manifest with the calibration evidence.",
+  "trace": "RIP-1.0.0 \u00a75.1 (viability + separation rules) and \u00a75.2 (calibration procedure). Committed BEFORE any pilot run \u2014 this file's presence in history before the pilot ledger is the pre-registration act. Values are recorded here and enter the manifest with the calibration evidence.",
   "theta_b_rule": "midpoint of the medians of the control-edit and targeted-edit drift distributions",
   "viability": {
     "min_targeted_iqr": 0.05,
     "min_fraction_targeted_at_or_above_theta": 0.25,
-    "max_fraction_control_at_or_above_theta": 0.10
+    "max_fraction_control_at_or_above_theta": 0.1,
+    "min_theta_b_exclusive": 0.0
   },
-  "k_grid": [2, 3],
+  "k_grid": [
+    2,
+    3
+  ],
   "k_rule": "the k in k_grid maximizing agreement with the human calibration fold; ties break to the larger k",
   "folds": "calibration and verification folds are disjoint; verification agreement is reported only after k and theta_b are frozen",
-  "min_pilot_sample": 250
+  "min_pilot_sample": 250,
+  "saliency_floor_rule": "flat-saliency floor = the 10th percentile of per-candidate max sweep drops on the calibration fold; candidates below it re-adjudicate to E5 at labeling time",
+  "fold_rule": "identity-sorted position parity within the pilot sample: even positions -> calibration fold, odd -> verification fold; folds are disjoint by construction"
 }

@@ -28,7 +28,18 @@ __all__ = [
 ]
 
 #: The pinned drift instrument identity (recorded in provenance).
-DRIFT_INSTRUMENT_ID = "bertscore-f1;roberta-large;drift=1-F1"
+DRIFT_INSTRUMENT_ID = "bertscore-f1;roberta-large;idf=false;rescale=false;drift=1-F1"
+
+
+def instrument_provenance() -> dict[str, str]:
+    """Return the runtime instrument identity for provenance recording.
+
+    Includes the bert-score library version (review F3: the instrument
+    revision must be pinned in evidence, not assumed).
+    """
+    import bert_score  # type: ignore[import-untyped]
+
+    return {"instrument": DRIFT_INSTRUMENT_ID, "bert_score_version": str(bert_score.__version__)}
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,10 +80,11 @@ def compute_drift(baseline_rationale: str, counterfactual_rationale: str) -> flo
     assert counterfactual_rationale.strip(), (
         "absent counterfactual rationale is a P6 (b′) matter, not a drift input"
     )
-    from bert_score import score as bertscore  # type: ignore[import-untyped]  # heavy
+    from bert_score import score as bertscore  # heavy; typed via the module ignore
 
     _, _, f1 = bertscore(
-        [counterfactual_rationale], [baseline_rationale], model_type="roberta-large", lang="en"
+        [counterfactual_rationale], [baseline_rationale], model_type="roberta-large",
+        lang="en", idf=False, rescale_with_baseline=False,
     )
     # LaTeX: d = 1 - F1_{BERTScore}(r_{cf}, r_{base})
     return float(1.0 - f1[0].item())

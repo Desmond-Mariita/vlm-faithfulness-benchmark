@@ -53,6 +53,7 @@ def _io(image_dependent: bool = True) -> PilotIO:
         registry=REGISTRY,
         declared_scope=frozenset({"aokvqa"}),
         spatial_qtypes=lambda r: False,
+        record_index_of=lambda r: int(r.identity.record_id.split("-")[1]),
     )
 
 

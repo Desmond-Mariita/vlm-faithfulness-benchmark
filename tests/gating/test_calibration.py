@@ -9,7 +9,9 @@ import pytest
 from vlm_faithfulness_benchmark.gating.calibration import (
     calibrate_theta_b,
     choose_k,
+    fold_of,
     load_preregistration,
+    saliency_floor,
 )
 
 PREREG = load_preregistration(
@@ -54,6 +56,17 @@ def test_underpowered_fold_is_conformance_error() -> None:
     """Below the pre-registered minimum is an error, never a verdict."""
     with pytest.raises(AssertionError, match="pre-registered minimum"):
         calibrate_theta_b(_fold(0.5, 0.2, n=100), _fold(0.05, 0.04), PREREG)
+
+
+def test_saliency_floor_and_fold_rules_are_registered_and_mechanical() -> None:
+    """Review Majors: floor percentile and fold parity come from prereg-v1."""
+    drops = [i / 100 for i in range(300)]
+    floor = saliency_floor(drops, PREREG)
+    below = sum(1 for d in drops if d < floor) / len(drops)
+    assert 0.08 <= below <= 0.12, "10th-percentile rule"
+    assert fold_of(0) == "calibration" and fold_of(1) == "verification"
+    with pytest.raises(AssertionError, match="underpowered"):
+        saliency_floor(drops[:50], PREREG)
 
 
 def test_choose_k_maximizes_agreement_ties_to_stricter() -> None:

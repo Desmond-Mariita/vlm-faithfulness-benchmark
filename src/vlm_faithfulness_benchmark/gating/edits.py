@@ -129,9 +129,13 @@ def control_box(
 ) -> tuple[int, int, int, int]:
     """Place the control box: same size, maximal box-distance (RIP §2.6(d)).
 
-    The control box has the evidence box's dimensions and is pinned to the
-    image corner farthest from the evidence box's center — deterministic,
-    no stream needed for placement.
+    The control box has the evidence box's dimensions and is placed
+    **disjoint** from the evidence box (review Blocker: a corner placement
+    can overlap a large evidence region, corrupting the P6 attribution and
+    the §5.1 separation evidence). Candidate placements sit fully above,
+    below, left, or right of the evidence box, hugging the opposite image
+    edge; the farthest-by-center-distance candidate wins. Deterministic, no
+    stream needed.
 
     Args:
         region: The S08 evidence region.
@@ -148,15 +152,30 @@ def control_box(
     """
     top, left, bottom, right = region.box
     box_h, box_w = bottom - top, right - left
-    assert box_h < image_height or box_w < image_width, (
-        "evidence box fills the image; control edit inapplicable"
-    )
+    candidates: list[tuple[int, int]] = []
+    if top >= box_h:  # fully above, hugging the top edge
+        candidates.append((0, max(0, min(left, image_width - box_w))))
+    if image_height - bottom >= box_h:  # fully below, hugging the bottom edge
+        candidates.append((image_height - box_h, max(0, min(left, image_width - box_w))))
+    if left >= box_w:  # fully to the left
+        candidates.append((max(0, min(top, image_height - box_h)), 0))
+    if image_width - right >= box_w:  # fully to the right
+        candidates.append((max(0, min(top, image_height - box_h)), image_width - box_w))
+    assert candidates, "no disjoint same-size placement exists; control edit inapplicable"
     center_r, center_c = (top + bottom) / 2, (left + right) / 2
-    corner_top = 0 if center_r >= image_height / 2 else image_height - box_h
-    corner_left = 0 if center_c >= image_width / 2 else image_width - box_w
-    corner_top = max(0, min(corner_top, image_height - box_h))
-    corner_left = max(0, min(corner_left, image_width - box_w))
-    return (corner_top, corner_left, corner_top + box_h, corner_left + box_w)
+
+    def _distance(pos: tuple[int, int]) -> float:
+        cr, cc = pos[0] + box_h / 2, pos[1] + box_w / 2
+        return (cr - center_r) ** 2 + (cc - center_c) ** 2
+
+    best_top, best_left = max(candidates, key=_distance)
+    chosen = (best_top, best_left, best_top + box_h, best_left + box_w)
+    # Disjointness is load-bearing — assert it rather than trust the search.
+    ct, cl, cb, cr2 = chosen
+    assert cb <= top or ct >= bottom or cr2 <= left or cl >= right, (
+        "control placement overlaps the evidence region (conformance error)"
+    )
+    return chosen
 
 
 def apply_control_edit(

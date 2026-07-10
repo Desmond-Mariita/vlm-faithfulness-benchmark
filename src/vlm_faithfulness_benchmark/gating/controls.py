@@ -14,6 +14,7 @@ to the remaining controls (RIP §2.6) — inapplicability is never a failure.
 
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass
 from typing import Sequence
@@ -85,8 +86,8 @@ def coherence_screen(
         return ControlResult("coherence", "fail", "counterfactual rationale absent/empty")
     n_base = len(baseline_rationale.split())
     n_cf = len(counterfactual_rationale.split())
-    floor = max(_MIN_ABS_TOKENS, int(_MIN_FRACTION * n_base))
-    ceiling = int(_MAX_FRACTION * n_base)
+    floor = max(_MIN_ABS_TOKENS, math.ceil(_MIN_FRACTION * n_base))
+    ceiling = math.floor(_MAX_FRACTION * n_base)
     if not floor <= n_cf <= ceiling:
         return ControlResult(
             "coherence", "fail", f"length {n_cf} outside [{floor}, {ceiling}] (base {n_base})"
@@ -141,7 +142,7 @@ def evaluate_p6(
         results.append(ControlResult("hflip", "inapplicable", "spatial-lateral qtype"))
     elif hflip_reading is None or not hflip_reading.evaluable():
         results.append(ControlResult("hflip", "fail", "hflip reading non-evaluable"))
-    elif hflip_reading.argmax_option() != baseline_chosen_index:
+    elif not hflip_reading.baseline_held(baseline_chosen_index):
         results.append(ControlResult("hflip", "fail", "baseline choice did not persist"))
     else:
         results.append(ControlResult("hflip", "pass", "baseline choice persisted"))

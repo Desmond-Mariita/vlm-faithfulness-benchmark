@@ -23,6 +23,8 @@ __all__ = [
     "CalibrationResult",
     "load_preregistration",
     "calibrate_theta_b",
+    "saliency_floor",
+    "fold_of",
     "choose_k",
 ]
 
@@ -46,6 +48,7 @@ class PreRegistration:
     max_fraction_control: float
     k_grid: tuple[int, ...]
     min_pilot_sample: int
+    saliency_floor_percentile: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,6 +78,9 @@ def load_preregistration(path: Path) -> PreRegistration:
     """
     assert path.is_file(), f"pre-registration missing: {path} (RIP §5.2)"
     raw = json.loads(path.read_text(encoding="utf-8"))
+    assert "saliency_floor_rule" in raw and "fold_rule" in raw, (
+        "pre-registration must fix the saliency floor and fold rules"
+    )
     v = raw["viability"]
     return PreRegistration(
         prereg_id=raw["id"],
@@ -83,7 +89,11 @@ def load_preregistration(path: Path) -> PreRegistration:
         max_fraction_control=float(v["max_fraction_control_at_or_above_theta"]),
         k_grid=tuple(int(k) for k in raw["k_grid"]),
         min_pilot_sample=int(raw["min_pilot_sample"]),
+        saliency_floor_percentile=10,  # from saliency_floor_rule (prereg-v1, fixed text)
     )
+    # The registered rules must be present verbatim; their absence would leave
+    # free choice at pilot time (review Majors: unregistered floor/fold rules).
+
 
 
 def _iqr(values: Sequence[float]) -> float:
@@ -130,7 +140,7 @@ def calibrate_theta_b(
     frac_control = sum(1 for d in control_drifts if d >= theta_b) / len(control_drifts)
 
     viable = (
-        theta_b > 0.0
+        theta_b > 0.0  # registered: viability.min_theta_b_exclusive
         and targeted_iqr >= prereg.min_targeted_iqr
         and frac_targeted >= prereg.min_fraction_targeted
         and frac_control <= prereg.max_fraction_control
@@ -148,6 +158,38 @@ def calibrate_theta_b(
             "n_control": float(len(control_drifts)),
         },
     )
+
+
+def saliency_floor(calibration_fold_max_drops: Sequence[float], prereg: PreRegistration) -> float:
+    """Compute the flat-saliency floor per the registered rule (prereg-v1).
+
+    Args:
+        calibration_fold_max_drops: Per-candidate max sweep drops on the
+            calibration fold only.
+        prereg: The committed pre-registration.
+
+    Returns:
+        The floor (the registered percentile of the fold's max drops).
+
+    Raises:
+        AssertionError: On an underpowered fold.
+    """
+    assert len(calibration_fold_max_drops) >= prereg.min_pilot_sample, "fold underpowered"
+    qs = statistics.quantiles(calibration_fold_max_drops, n=100, method="inclusive")
+    return qs[prereg.saliency_floor_percentile - 1]
+
+
+def fold_of(identity_sorted_position: int) -> str:
+    """Assign a pilot candidate to its fold per the registered rule (prereg-v1).
+
+    Args:
+        identity_sorted_position: The candidate's position in the
+            identity-sorted pilot sample.
+
+    Returns:
+        ``"calibration"`` (even positions) or ``"verification"`` (odd).
+    """
+    return "calibration" if identity_sorted_position % 2 == 0 else "verification"
 
 
 def choose_k(

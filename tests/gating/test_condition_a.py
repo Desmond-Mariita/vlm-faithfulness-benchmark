@@ -76,6 +76,15 @@ def test_evidence_supports_reconstruction() -> None:
     assert (det.flip_count, det.k) == (3, 2)
 
 
+def test_tie_counts_as_held_symmetrically() -> None:
+    """Pinned tie rule: baseline tied with any option => HELD, at any index."""
+    tied_low = RegimeReading("grey", (-0.5, -0.5, -3.0, -4.0))
+    assert tied_low.baseline_held(0) and tied_low.baseline_held(1)
+    tied_high = RegimeReading("grey", (-0.5, -3.0, -0.5, -4.0))
+    assert tied_high.baseline_held(2), "tie at a later index must also read HELD"
+    assert not tied_high.baseline_held(1)
+
+
 def test_argmax_requires_evaluable_reading() -> None:
     """Reading surface guards its own preconditions."""
     with pytest.raises(AssertionError):

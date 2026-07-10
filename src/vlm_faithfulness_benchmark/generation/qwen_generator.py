@@ -27,10 +27,16 @@ repaired here.
 Decoding (RIP-1.0.0 §3): greedy, ``do_sample=False``, ``num_beams=1``,
 ``max_new_tokens=160`` (pinned in the identity components).
 
-**Option scorer (contract ``option-letter-logprob-v1``):** the graded CC5
+**Option scorer (contract ``option-letter-logprob-v1.1``):** the graded CC5
 reading for S06/S08 is, per option, the total log-probability of the
 assistant reply ``"<LETTER>."`` under the same prompt — one forward pass
 per option, no sampling. The scorer never sees a gold answer (ADR-004).
+v1.1 fixes v1's token alignment: the reply tokens sit at the
+prompt-boundary positions, not at the sequence tail (the tail holds the
+chat template's end-of-turn tokens, so v1 scored option-independent
+suffix noise — caught by the pilot's real-regime control reading, which
+agreed with the generator's own choice on only 14/499 unperturbed
+images).
 """
 
 from __future__ import annotations
@@ -52,7 +58,7 @@ __all__ = [
 ]
 
 EXTRACTION_CONTRACT_ID = "aokvqa-mc-v1.1"
-OPTION_SCORER_ID = "option-letter-logprob-v1"
+OPTION_SCORER_ID = "option-letter-logprob-v1.1"
 _MODEL_ID = "Qwen/Qwen3-VL-8B-Instruct"
 _MAX_NEW_TOKENS = 160
 _RATIONALE_MARKER = "Rationale:"
@@ -134,6 +140,40 @@ class QwenGenerator:
         # complete composite identity (R3) — halt rather than record "unpinned".
         assert revision, "R3: weight revision hash unavailable; refusing unpinned identity"
         self._revision = str(revision)
+
+    def scorer_generation_agreement(self, records: "list[SourceRecord]") -> float:
+        """Measure scorer-vs-generation agreement on unperturbed images.
+
+        The instrument sanity gate added after the v1 defect: the fraction
+        of records where the scorer's argmax matches the generator's own
+        emitted choice.
+
+        The pilot's real-regime control reading is this quantity over the
+        full sample; run this on a small batch before any readings-dependent
+        GPU run (instrument sanity gate — added after the v1 defect).
+
+        Args:
+            records: A small validation batch.
+
+        Returns:
+            Agreement fraction in [0, 1] over records whose generation
+            parsed to an option.
+        """
+        agree = total = 0
+        for record in records:
+            outcome = self(record)
+            if outcome.chosen_answer is None:
+                continue
+            chosen_index = next(
+                i for i, o in enumerate(record.options)
+                if o.strip().lower() == outcome.chosen_answer.strip().lower()
+            )
+            scores = self.score_options(record)
+            total += 1
+            if scores[chosen_index] >= max(scores):
+                agree += 1
+        assert total > 0, "no parseable generations in the validation batch"
+        return agree / total
 
     def identity(self) -> GeneratorId:
         """The composite identity naming every component (R3, ADR-005)."""
@@ -253,15 +293,27 @@ class QwenGenerator:
                 messages, add_generation_prompt=False, tokenize=True,
                 return_dict=True, return_tensors="pt",
             ).to(self._model.device)
+            prompt_len = int(
+                self._processor.apply_chat_template(
+                    messages[:1], add_generation_prompt=True, tokenize=True,
+                    return_dict=True, return_tensors="pt",
+                )["input_ids"].shape[1]
+            )
             reply_token_count = len(
                 self._processor.tokenizer(reply, add_special_tokens=False)["input_ids"]
             )
+            ids = inputs["input_ids"][0]
+            # v1.1 alignment: reply tokens occupy [prompt_len, prompt_len+n);
+            # verify rather than trust (the v1 defect class must halt).
+            reply_ids = self._processor.tokenizer(reply, add_special_tokens=False)["input_ids"]
+            assert ids[prompt_len : prompt_len + reply_token_count].tolist() == reply_ids, (
+                "scorer alignment defect: reply tokens not at the prompt boundary"
+            )
             with self._torch.inference_mode():
                 logits = self._model(**inputs).logits
-            ids = inputs["input_ids"][0]
             logprobs = self._torch.log_softmax(logits[0, :-1], dim=-1)
-            tail = logprobs[-reply_token_count:].gather(
-                1, ids[-reply_token_count:].unsqueeze(1)
+            span = logprobs[prompt_len - 1 : prompt_len - 1 + reply_token_count].gather(
+                1, ids[prompt_len : prompt_len + reply_token_count].unsqueeze(1)
             )
-            scores.append(float(tail.sum().item()))
+            scores.append(float(span.sum().item()))
         return tuple(scores)

@@ -50,8 +50,27 @@ assert agreement >= AGREEMENT_GATE, (
 )
 log("validation gate PASSED — starting observation rerun")
 
-# --- observation rerun (fresh ledger; S02 baselines reused) ---
-s02_ledger = RunLedger(ROOT / "data/runs/pilot-s02.jsonl")
+# --- S02 re-derivation under the corrected identity (fresh ledger) ---
+# The v1.1 scorer is an identity component, so v1 ledger keys cannot match
+# (R3 working as intended). Greedy decoding => tuples should reproduce
+# byte-identically; verified against the v1 ledger below as determinism
+# evidence.
+from vlm_faithfulness_benchmark.generation.harness import run_s02
+s02_ledger = RunLedger(ROOT / "data/runs/pilot-s02-v2.jsonl")
+t0 = time.time()
+r1 = run_s02(records, gen, gen_id, s02_ledger)
+log(f"s02-v2: {r1} in {time.time()-t0:.0f}s")
+old = RunLedger(ROOT / "data/runs/pilot-s02.jsonl")
+old_by_source = {}
+for k in old.keys():
+    pl = old.payload(k)
+    old_by_source[pl["source"]] = pl["output_tuple"]
+matches = sum(
+    1 for k in s02_ledger.keys()
+    if s02_ledger.payload(k)["output_tuple"] == old_by_source.get(s02_ledger.payload(k)["source"])
+)
+log(f"determinism check: {matches}/{PILOT_N} baseline tuples byte-identical to v1 run")
+old.close()
 s02_payloads = {k.removesuffix("::output_tuple"): s02_ledger.payload(k)
                 for k in s02_ledger.keys()}
 

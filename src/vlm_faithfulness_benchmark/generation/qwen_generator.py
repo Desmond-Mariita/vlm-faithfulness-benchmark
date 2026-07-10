@@ -26,6 +26,11 @@ repaired here.
 
 Decoding (RIP-1.0.0 §3): greedy, ``do_sample=False``, ``num_beams=1``,
 ``max_new_tokens=160`` (pinned in the identity components).
+
+**Option scorer (contract ``option-letter-logprob-v1``):** the graded CC5
+reading for S06/S08 is, per option, the total log-probability of the
+assistant reply ``"<LETTER>."`` under the same prompt — one forward pass
+per option, no sampling. The scorer never sees a gold answer (ADR-004).
 """
 
 from __future__ import annotations
@@ -38,9 +43,16 @@ from vlm_faithfulness_benchmark.generation.harness import GenerationOutcome
 from vlm_faithfulness_benchmark.generation.identity import GeneratorId
 from vlm_faithfulness_benchmark.ingestion.aokvqa import SourceRecord
 
-__all__ = ["EXTRACTION_CONTRACT_ID", "build_prompt", "extract_outcome", "QwenGenerator"]
+__all__ = [
+    "EXTRACTION_CONTRACT_ID",
+    "OPTION_SCORER_ID",
+    "build_prompt",
+    "extract_outcome",
+    "QwenGenerator",
+]
 
 EXTRACTION_CONTRACT_ID = "aokvqa-mc-v1.1"
+OPTION_SCORER_ID = "option-letter-logprob-v1"
 _MODEL_ID = "Qwen/Qwen3-VL-8B-Instruct"
 _MAX_NEW_TOKENS = 160
 _RATIONALE_MARKER = "Rationale:"
@@ -131,6 +143,7 @@ class QwenGenerator:
                 "revision": self._revision,
                 "decoding": f"greedy;beams=1;max_new_tokens={_MAX_NEW_TOKENS}",
                 "extraction_contract": EXTRACTION_CONTRACT_ID,
+                "option_scorer": OPTION_SCORER_ID,
                 "prompt_template": EXTRACTION_CONTRACT_ID,  # prompt is part of the contract
                 "image_preprocessing": "pil-rgb-native",
                 "dtype": "bfloat16",
@@ -176,3 +189,59 @@ class QwenGenerator:
         new_tokens = generated[0, inputs["input_ids"].shape[1] :]
         text = self._processor.decode(new_tokens, skip_special_tokens=True)
         return extract_outcome(text, record.options)
+
+    def score_options(
+        self, record: SourceRecord, image_override: "object | None" = None
+    ) -> tuple[float, ...]:
+        """Score each option's reply log-probability (contract option-letter-logprob-v1).
+
+        Args:
+            record: The Source Record (prompt source).
+            image_override: A PIL image or HxWx3 uint8 array to score
+                against instead of the record's own image (regime/sweep
+                inputs); None uses the record's image.
+
+        Returns:
+            Per-option total log-probabilities of the reply ``"<LETTER>."``
+            — the CC5 graded reading consumed by Condition A and the S08
+            sweep.
+        """
+        import string
+
+        import numpy as np
+        from PIL import Image
+
+        if image_override is None:
+            image_id = record.image_ref.removeprefix("coco/")
+            pil = Image.open(self._image_root / f"{int(image_id):012d}.jpg").convert("RGB")
+        elif isinstance(image_override, np.ndarray):
+            pil = Image.fromarray(image_override)
+        else:
+            pil = image_override  # type: ignore[assignment]
+        scores: list[float] = []
+        prompt = build_prompt(record)
+        for i in range(len(record.options)):
+            reply = f"{string.ascii_uppercase[i]}."
+            messages = [
+                {"role": "user", "content": [
+                    {"type": "image", "image": pil},
+                    {"type": "text", "text": prompt},
+                ]},
+                {"role": "assistant", "content": [{"type": "text", "text": reply}]},
+            ]
+            inputs = self._processor.apply_chat_template(
+                messages, add_generation_prompt=False, tokenize=True,
+                return_dict=True, return_tensors="pt",
+            ).to(self._model.device)
+            reply_token_count = len(
+                self._processor.tokenizer(reply, add_special_tokens=False)["input_ids"]
+            )
+            with self._torch.inference_mode():
+                logits = self._model(**inputs).logits
+            ids = inputs["input_ids"][0]
+            logprobs = self._torch.log_softmax(logits[0, :-1], dim=-1)
+            tail = logprobs[-reply_token_count:].gather(
+                1, ids[-reply_token_count:].unsqueeze(1)
+            )
+            scores.append(float(tail.sum().item()))
+        return tuple(scores)

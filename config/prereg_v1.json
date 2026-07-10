@@ -1,0 +1,14 @@
+{
+  "id": "prereg-v1",
+  "trace": "RIP-1.0.0 §5.1 (viability + separation rules) and §5.2 (calibration procedure). Committed BEFORE any pilot run — this file's presence in history before the pilot ledger is the pre-registration act. Values are recorded here and enter the manifest with the calibration evidence.",
+  "theta_b_rule": "midpoint of the medians of the control-edit and targeted-edit drift distributions",
+  "viability": {
+    "min_targeted_iqr": 0.05,
+    "min_fraction_targeted_at_or_above_theta": 0.25,
+    "max_fraction_control_at_or_above_theta": 0.10
+  },
+  "k_grid": [2, 3],
+  "k_rule": "the k in k_grid maximizing agreement with the human calibration fold; ties break to the larger k",
+  "folds": "calibration and verification folds are disjoint; verification agreement is reported only after k and theta_b are frozen",
+  "min_pilot_sample": 250
+}

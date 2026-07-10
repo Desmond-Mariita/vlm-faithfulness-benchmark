@@ -163,6 +163,26 @@ class QwenGenerator:
 
         image_id = record.image_ref.removeprefix("coco/")
         image = Image.open(self._image_root / f"{int(image_id):012d}.jpg").convert("RGB")
+        return self.generate_on(record, image)
+
+    def generate_on(self, record: SourceRecord, image: "object") -> GenerationOutcome:
+        """Run the generator on an explicit image (regime/edited inputs, S06/S09).
+
+        Same composite subject, same decoding pins (CC7); only the visual
+        input varies — which is exactly what an intervention is.
+
+        Args:
+            record: The normalized Source Record (prompt source).
+            image: A PIL image or HxWx3 uint8 array.
+
+        Returns:
+            The emitted outcome under the pinned extraction contract.
+        """
+        import numpy as np
+        from PIL import Image
+
+        if isinstance(image, np.ndarray):
+            image = Image.fromarray(image)
         messages = [
             {
                 "role": "user",

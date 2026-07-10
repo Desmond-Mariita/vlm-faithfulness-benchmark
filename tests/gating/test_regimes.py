@@ -59,7 +59,7 @@ def test_hflip_is_an_involution_and_preserves_content() -> None:
 
 
 def test_grey_is_information_free_and_occlude_covers_half() -> None:
-    """grey = uniform field; occlude zeroes ~50% of pixels (pinned fraction)."""
+    """Grey = uniform field; occlude zeroes ~50% of pixels (pinned fraction)."""
     img = np.full((64, 96, 3), 200, dtype=np.uint8)
     grey = apply_regime("grey", img, 0)
     assert grey.min() == grey.max() == 128

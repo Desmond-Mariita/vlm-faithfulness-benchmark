@@ -1,0 +1,13 @@
+{
+  "id": "prereg-selection-v1",
+  "purpose": "Registered rule for selecting the drift instrument on EXISTING pilot texts (selection data). The confirmatory gate runs later on fresh records under prereg-v2. Committed BEFORE any candidate instrument is scored on the texts.",
+  "candidates": [
+    {"id": "nli-bidir", "desc": "Bidirectional NLI: drift = 1 - mean(P_entail(a->b), P_entail(b->a)) using a DeBERTa-v3 multi-dataset MNLI-class checkpoint", "cc1": "ratified-ruler (BM 2026-07-11)"},
+    {"id": "embed-cosine", "desc": "Modern sentence-embedding cosine distance", "cc1": "ruler"},
+    {"id": "jaccard-content", "desc": "1 - Jaccard overlap of content words (stopword-stripped, lowercased)", "cc1": "ruler (zero risk)"},
+    {"id": "bertscore-baseline", "desc": "Existing BERTScore-F1 drift (comparator only; may win only by the same rule as others)", "cc1": "ruler"}
+  ],
+  "evaluation_data": "existing pilot-v2 targeted and control rationale texts; PAIRS RESTRICTED to calibration-fold candidates (even identity-sorted positions) — verification-fold texts stay untouched",
+  "selection_rule": "winner = candidate with the highest unpaired AUROC(targeted vs control drift) on the calibration-fold pairs, REQUIRING paired median delta > 0 on candidates having both drifts; ties within 0.01 AUROC break toward lower CC1 risk (jaccard > embed > nli > bertscore reversed-risk order), then toward cheaper compute",
+  "notes": "AlignScore was named by the panel but is excluded from this round unless its package installs cleanly on CPU without pinning conflicts; if included later, it joins under the same rule BEFORE scoring (record an amendment)."
+}

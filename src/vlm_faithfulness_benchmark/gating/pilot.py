@@ -1,4 +1,4 @@
-"""Pilot observation orchestrator (V1-045; RIP §5.1–§5.2).
+"""Pilot observation orchestrator (V1-045; RIP-1.1.0 control design; prereg-v2 gate).
 
 Matrix rows: S04–S11 stage chain, CC2 (exactly-once per phase), D-ATOM
 (record-level atomic commits), GPU discipline (resume via the run ledger).
@@ -28,9 +28,9 @@ import numpy.typing as npt
 from vlm_faithfulness_benchmark.gating.condition_a import RegimeReading
 from vlm_faithfulness_benchmark.gating.controls import coherence_screen
 from vlm_faithfulness_benchmark.gating.edits import (
-    apply_control_edit,
+    apply_multipatch_control_edit,
     apply_targeted_edit,
-    control_box,
+    control_patches,
 )
 from vlm_faithfulness_benchmark.gating.gates import evaluate_p_gates
 from vlm_faithfulness_benchmark.gating.regimes import (
@@ -185,15 +185,21 @@ def _observe_candidate(
 
     targeted_image = apply_targeted_edit(image, partner, region, record_index)
     control_applicable = True
+    coverage_ratio = 0.0
     try:
-        control_box(region, image.shape[0], image.shape[1])
+        patches = control_patches(region, image.shape[0], image.shape[1])
+        top, left, bottom, right = region.box
+        coverage_ratio = sum(
+            (pb - pt) * (pr - pl) for pt, pl, pb, pr in patches
+        ) / ((bottom - top) * (right - left))
     except AssertionError:
         control_applicable = False
     row["control_edit_applicable"] = control_applicable
+    row["control_coverage_ratio"] = round(coverage_ratio, 4)  # RIP-1.1.0 provenance
 
     targeted_out = io.generate(record, targeted_image)
     control_out = (
-        io.generate(record, apply_control_edit(image, partner, region, record_index))
+        io.generate(record, apply_multipatch_control_edit(image, partner, region, record_index))
         if control_applicable
         else None
     )

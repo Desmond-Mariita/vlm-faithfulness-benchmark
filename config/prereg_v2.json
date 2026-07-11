@@ -1,0 +1,34 @@
+{
+  "id": "prereg-v2",
+  "supersedes": "prereg-v1 (its fraction criteria failed as registered; disposition: methodology_unified_position.md + BM decisions 2026-07-11)",
+  "trace": "Committed BEFORE the fresh confirmatory pilot. Grounded in the two-round literature consultation; instrument chosen by prereg-selection-v1's rule on calibration-fold texts only.",
+  "instrument": {
+    "id": "jaccard-content-v1",
+    "definition": "drift = 1 - Jaccard(content words of baseline rationale, content words of counterfactual rationale); content words = lowercased [a-z'] tokens minus the pinned stopword list shipped as config/stopwords_v1.txt",
+    "selected_by": "prereg-selection-v1 rule: AUROC tie (0.8512 vs 0.8556, within 0.01) broken to lowest CC1 risk; paired requirement met (+0.0718)",
+    "cc1": "ruler (zero risk); secondary descriptive instruments recorded but non-gating: bertscore-f1, embed-cosine"
+  },
+  "control_design": "area-matched multi-patch control edits (16px tiles, deterministic grid scan, min coverage 25% of evidence area, coverage ratio recorded)",
+  "estimand": "distribution separation of targeted vs multi-patch-control drift on FRESH records, generator Qwen3-VL-8B-Instruct, A-OKVQA val records disjoint from the 500 pilot records",
+  "gate": {
+    "primary": "one-sided minimum-effect test: reject viability only if the 95% CI lower bound of AUROC(targeted vs control) < 0.71 (SESOI = Vargha-Delaney 'large'); CI by stratified bootstrap (10,000 resamples)",
+    "co_primary_paired": "paired within-record median(targeted - control drift) > 0 with 95% bootstrap CI excluding 0",
+    "operating_point": "theta_B = the empirical 90th percentile of the control-drift distribution on the fresh calibration fold (specificity operating point, quantile RULE not a number)"
+  },
+  "sample": {
+    "n_records": 200,
+    "power_basis": "Hanley-McNeil: n=60/group powers alpha=.05 one-sided, 80%, A1=0.83 vs A0=0.71; n=200 records (~100/fold after parity split, near-complete control coverage via multi-patch) gives margin >2x over the requirement",
+    "fold_rule": "identity-sorted position parity within the fresh sample: even -> calibration, odd -> verification",
+    "one_shot": "the verification fold is consumed EXACTLY ONCE by the gate; no re-analysis after unblinding"
+  },
+  "escalation_options_registered_in_advance": [
+    "PASS both gates -> proceed to k/theta calibration + human verification sheet (M8 continues)",
+    "FAIL primary only -> Charter 6 disposition on the EDIT OPERATIONALIZATION (e.g. inpainting-based counterfactuals); the instrument question is closed and may not be reopened for this failure",
+    "FAIL paired only -> investigate control-coverage stratification confound; one registered re-run permitted with stratified sampling; second failure -> Charter 6 on operationalization",
+    "FAIL both -> Charter 6 disposition; options limited to: re-scope edits, or project re-scope per Charter"
+  ],
+  "k_grid": [2, 3],
+  "k_rule": "unchanged from prereg-v1",
+  "saliency_floor_rule": "unchanged from prereg-v1 (10th percentile of calibration-fold max drops)",
+  "min_pilot_sample_per_fold": 60
+}

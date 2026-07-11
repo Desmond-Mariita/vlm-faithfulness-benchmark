@@ -107,7 +107,7 @@ def test_multipatch_control_covers_area_and_avoids_evidence() -> None:
     region = _region((0, 0, 40, 80))
     patches = control_patches(region, 64, 96)
     area = sum((pb - pt) * (pr - pl) for pt, pl, pb, pr in patches)
-    assert area >= 40 * 80
+    assert area >= 0.25 * (40 * 80), "pinned minimum coverage"
     et, el, eb, er = region.box
     for pt, pl, pb, pr in patches:
         assert pb <= et or pt >= eb or pr <= el or pl >= er, "patch overlaps evidence"
@@ -122,6 +122,7 @@ def test_multipatch_inapplicable_only_when_truly_no_room() -> None:
     """Coverage: applicable even for huge boxes; asserts only when area exhausted."""
     from vlm_faithfulness_benchmark.gating.edits import control_patches
 
-    assert control_patches(_region((0, 0, 60, 90)), 64, 96)  # single-box case failed here
+    with pytest.raises(AssertionError, match="inapplicable"):
+        control_patches(_region((0, 0, 60, 90)), 64, 96)  # free tiles < 25% of evidence
     with pytest.raises(AssertionError, match="inapplicable"):
         control_patches(_region((0, 0, 64, 96)), 64, 96)

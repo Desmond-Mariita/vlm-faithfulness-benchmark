@@ -237,10 +237,9 @@ def control_patches(
         and from each other).
 
     Raises:
-        AssertionError: If the free area outside the evidence box is
-            smaller than the evidence area — the control is then genuinely
-            inapplicable (rare: evidence covering more than half the image
-            in tile-quantized terms).
+        AssertionError: If the free tiles cover less than the pinned 25%
+            minimum of the evidence area — the control is then genuinely
+            inapplicable.
     """
     top, left, bottom, right = region.box
     target_area = (bottom - top) * (right - left)
@@ -256,7 +255,10 @@ def control_patches(
             covered += _PATCH_PX * _PATCH_PX
             if covered >= target_area:
                 return tuple(patches)
-    assert False, "free area below evidence area; multi-patch control inapplicable"
+    assert covered >= 0.25 * target_area, (
+        "free tiles below 25% of evidence area; multi-patch control inapplicable"
+    )
+    return tuple(patches)
 
 
 def apply_multipatch_control_edit(

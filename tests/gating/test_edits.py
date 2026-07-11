@@ -93,3 +93,35 @@ def test_control_edit_leaves_evidence_region_untouched() -> None:
     top, left, bottom, right = region.box
     assert np.array_equal(edited[top:bottom, left:right], img[top:bottom, left:right])
     assert not np.array_equal(edited, img)
+
+
+def test_multipatch_control_covers_area_and_avoids_evidence() -> None:
+    """RIP v2: area-matched patches, disjoint from evidence, near-universal."""
+    from vlm_faithfulness_benchmark.gating.edits import (
+        apply_multipatch_control_edit,
+        control_patches,
+    )
+
+    img, partner = _img(1), _img(2)
+    # The case the single-box design could NOT serve: a large evidence box.
+    region = _region((0, 0, 40, 80))
+    patches = control_patches(region, 64, 96)
+    area = sum((pb - pt) * (pr - pl) for pt, pl, pb, pr in patches)
+    assert area >= 40 * 80
+    et, el, eb, er = region.box
+    for pt, pl, pb, pr in patches:
+        assert pb <= et or pt >= eb or pr <= el or pl >= er, "patch overlaps evidence"
+    edited = apply_multipatch_control_edit(img, partner, region, 5)
+    assert np.array_equal(edited[et:eb, el:er], img[et:eb, el:er]), "evidence touched"
+    assert not np.array_equal(edited, img)
+    # determinism
+    assert np.array_equal(edited, apply_multipatch_control_edit(img, partner, region, 5))
+
+
+def test_multipatch_inapplicable_only_when_truly_no_room() -> None:
+    """Coverage: applicable even for huge boxes; asserts only when area exhausted."""
+    from vlm_faithfulness_benchmark.gating.edits import control_patches
+
+    assert control_patches(_region((0, 0, 60, 90)), 64, 96)  # single-box case failed here
+    with pytest.raises(AssertionError, match="inapplicable"):
+        control_patches(_region((0, 0, 64, 96)), 64, 96)

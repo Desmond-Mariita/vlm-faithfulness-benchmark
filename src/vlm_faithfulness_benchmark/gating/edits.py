@@ -24,7 +24,13 @@ import numpy.typing as npt
 
 from vlm_faithfulness_benchmark.gating.saliency import EvidenceRegion
 
-__all__ = ["apply_targeted_edit", "control_box", "apply_control_edit"]
+__all__ = [
+    "apply_targeted_edit",
+    "control_box",
+    "apply_control_edit",
+    "control_patches",
+    "apply_multipatch_control_edit",
+]
 
 Image = npt.NDArray[np.uint8]
 
@@ -204,3 +210,82 @@ def apply_control_edit(
     patch = _resize_nearest(donor, bottom - top, right - left)
     rng = np.random.default_rng(3_000_000 + record_index)
     return _paste_with_feather(image, patch, box, rng)
+
+
+#: Multi-patch control tile size in pixels (RIP v2 candidate pin).
+_PATCH_PX = 16
+
+
+def control_patches(
+    region: EvidenceRegion, image_height: int, image_width: int
+) -> tuple[tuple[int, int, int, int], ...]:
+    """Place area-matched control patches outside the evidence region (RIP v2).
+
+    Replaces the single same-size control box (whose disjoint placement
+    failed for 83% of pilot candidates — the panel's structural-coverage
+    finding). Fixed-size tiles are laid on a deterministic grid scan,
+    skipping any tile overlapping the evidence box, until the tiles' total
+    area is at least the evidence box's area.
+
+    Args:
+        region: The S08 evidence region to avoid.
+        image_height: Image height in pixels.
+        image_width: Image width in pixels.
+
+    Returns:
+        The chosen patch boxes (possibly many, disjoint from the evidence
+        and from each other).
+
+    Raises:
+        AssertionError: If the free area outside the evidence box is
+            smaller than the evidence area — the control is then genuinely
+            inapplicable (rare: evidence covering more than half the image
+            in tile-quantized terms).
+    """
+    top, left, bottom, right = region.box
+    target_area = (bottom - top) * (right - left)
+    patches: list[tuple[int, int, int, int]] = []
+    covered = 0
+    for r0 in range(0, image_height - _PATCH_PX + 1, _PATCH_PX):
+        for c0 in range(0, image_width - _PATCH_PX + 1, _PATCH_PX):
+            r1, c1 = r0 + _PATCH_PX, c0 + _PATCH_PX
+            overlaps = not (r1 <= top or r0 >= bottom or c1 <= left or c0 >= right)
+            if overlaps:
+                continue
+            patches.append((r0, c0, r1, c1))
+            covered += _PATCH_PX * _PATCH_PX
+            if covered >= target_area:
+                return tuple(patches)
+    assert False, "free area below evidence area; multi-patch control inapplicable"
+
+
+def apply_multipatch_control_edit(
+    image: Image,
+    partner_image: Image,
+    region: EvidenceRegion,
+    record_index: int,
+) -> Image:
+    """Apply the area-matched multi-patch control edit (RIP v2 candidate).
+
+    Each patch is filled from the derangement partner at the same
+    coordinates and feathered from the control stream
+    ``default_rng(3_000_000 + record_index)`` (one stream, sequential
+    draws), exactly mirroring the targeted edit's machinery.
+
+    Args:
+        image: The baseline image (never modified).
+        partner_image: The derangement partner (same donor policy).
+        region: The S08 evidence region the control must avoid.
+        record_index: Keys the control feather stream.
+
+    Returns:
+        The control-edited image; the evidence region is untouched.
+    """
+    rng = np.random.default_rng(3_000_000 + record_index)
+    out = image.copy()
+    for box in control_patches(region, image.shape[0], image.shape[1]):
+        top, left, bottom, right = box
+        donor = _donor_crop(partner_image, box)
+        patch = _resize_nearest(donor, bottom - top, right - left)
+        out = _paste_with_feather(out, patch, box, rng)
+    return out

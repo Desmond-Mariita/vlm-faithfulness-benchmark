@@ -27,8 +27,18 @@
     "FAIL paired only -> investigate control-coverage stratification confound; one registered re-run permitted with stratified sampling; second failure -> Charter 6 on operationalization",
     "FAIL both -> Charter 6 disposition; options limited to: re-scope edits, or project re-scope per Charter"
   ],
-  "k_grid": [2, 3],
+  "k_grid": [
+    2,
+    3
+  ],
   "k_rule": "unchanged from prereg-v1",
   "saliency_floor_rule": "unchanged from prereg-v1 (10th percentile of calibration-fold max drops)",
-  "min_pilot_sample_per_fold": 60
+  "min_pilot_sample_per_fold": 60,
+  "registered_descriptives_non_gating": [
+    "answer-flip-stratified drift: report targeted-drift distributions separately for records whose chosen answer flips vs persists under the targeted edit",
+    "evidence-mention-flip: fraction of counterfactual rationales that stop mentioning the top content words of the baseline rationale's evidence-region description",
+    "length-robustness: paired drift recomputed on length-normalized rationales (truncated to min pair length in tokens) to expose verbosity artifacts of the Jaccard instrument",
+    "bertscore-f1 and embed-cosine drifts (comparator instruments)"
+  ],
+  "descriptives_rule": "all descriptives are computed AFTER the gate verdict is recorded and may not alter it; registered here before any fresh data exists"
 }

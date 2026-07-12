@@ -24,6 +24,7 @@ set -euo pipefail
 : "${B2_KEY:?export B2_KEY (B2 applicationKey) first}"
 : "${B2_BUCKET:?export B2_BUCKET (bucket name) first}"
 SETUP_DEEPSEEK="${SETUP_DEEPSEEK:-0}"
+SETUP_KIMI="${SETUP_KIMI:-0}"
 
 REMOTE_NAME="b2bench"
 WORKDIR="$(pwd)"
@@ -110,6 +111,19 @@ if [[ "$SETUP_DEEPSEEK" == "1" ]]; then
     success "DeepSeek venv ready (freeze recorded)"
 fi
 
+# ---- optional isolated Kimi-VL venv (backup lane; transformers 4.x pin) ----
+if [[ "$SETUP_KIMI" == "1" ]]; then
+    info "building isolated Kimi-VL venv (.venv-kimi)..."
+    python3 -m venv .venv-kimi
+    source .venv-kimi/bin/activate
+    pip install --upgrade pip -q
+    pip install -r config/env_kimi_vl_requirements.txt -q
+    pip install -e . --no-deps -q
+    pip freeze > "$RUNS_DIR/../env_kimi_freeze.txt" || true
+    deactivate
+    success "Kimi venv ready (freeze recorded)"
+fi
+
 # ---- ledger backups: cron every 15 min + change-triggered monitor ----
 mkdir -p "$RUNS_DIR"
 rclone sync "$RUNS_DIR" "$REMOTE_NAME:$B2_BUCKET/runs_auto" --progress || true
@@ -151,6 +165,11 @@ DeepSeek lane (only with SETUP_DEEPSEEK=1 at setup):
 
   source .venv-dsvl2/bin/activate
   python scripts_run_shard.py --generator deepseek --shard-start 0 --shard-end 4549
+
+Kimi backup lane (only with SETUP_KIMI=1; recorded substitution only):
+
+  source .venv-kimi/bin/activate
+  python scripts_run_shard.py --generator kimi --shard-start 0 --shard-end 4549
 
 Ledgers under data/runs/ sync to B2 automatically (cron + monitor).
 EOF

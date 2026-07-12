@@ -1,0 +1,20 @@
+# Isolated environment for the Kimi-VL-A3B backup adapter ONLY.
+#
+# Rehearsal finding 2026-07-12: Kimi's trust_remote_code modeling file
+# imports `is_torch_fx_available`, removed in transformers 5.x — the model
+# card pins transformers==4.48.2 and that pin is load-bearing. The Qwen/GLM
+# main env runs transformers 5.x, so the Kimi lane (if activated as the
+# recorded DeepSeek substitution) runs in its own venv, like DeepSeek's.
+#
+# tiktoken + blobfile are undeclared imports of the remote code (also a
+# rehearsal finding); bitsandbytes is for the LOCAL 8-bit plumbing test
+# only (cloud corpus runs are bf16 and never quantize).
+
+transformers==4.48.2
+torch>=2.1
+accelerate>=1.0
+tiktoken
+blobfile
+bitsandbytes
+pillow
+numpy

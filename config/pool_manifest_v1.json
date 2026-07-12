@@ -9,5 +9,42 @@
   "n_missing_images": 0,
   "order_rule": "identity-sorted by record_id; position in this order keys ALL seed streams, the wrong-image derangement (cyclic successor), and fold parity",
   "sha256_of_record_id_sequence": "1d1ba93649f02eb0d28b5c3614368c4b6c92bb9cb5d29ca8bab09387875cf12d",
-  "pilot_overlap_note": "records at identity positions previously used by the 500-record pilot and 200-record confirmatory run remain in the pool; their instances are constructed fresh per generator identity; calibration-quarantine (N6.6) applies at split time to every record consumed by any calibration act"
+  "pilot_overlap_note": "records at identity positions previously used by the 500-record pilot and 200-record confirmatory run remain in the pool; their instances are constructed fresh per generator identity; calibration-quarantine (N6.6) applies at split time to every record consumed by any calibration act",
+  "hash_procedure": "sha256 over the UTF-8 bytes of the record_id strings joined by single '\\n' (no trailing newline), in the identity-sorted order",
+  "derangement_pair_sha256": "60d90995581bdfd7b4b4a564d16bc7a941b0eec93ccbb3e701c631af3889717b",
+  "derangement_pair_procedure": "sha256 over UTF-8 lines 'record_id<TAB>partner_record_id' joined by '\\n' (no trailing newline), partner = cyclic successor via regimes.wrong_image_partner_index(i, N)",
+  "ingestion_excluded_records": [
+    {
+      "record_id": "7fowKHWtcwn4zhyoFwxXvR",
+      "reason": "empty option text"
+    },
+    {
+      "record_id": "88mYVXQDu74ofGusuBQygg",
+      "reason": "empty option text"
+    },
+    {
+      "record_id": "bCjS888uSeyRMczZageqTp",
+      "reason": "empty option text"
+    },
+    {
+      "record_id": "hHsmSwYq7YMmord6JkkDQA",
+      "reason": "empty option text"
+    },
+    {
+      "record_id": "anX6yFZKb9iCB5xWX4FZiW",
+      "reason": "empty option text"
+    },
+    {
+      "record_id": "m8cW27Njas2bidQihcskNn",
+      "reason": "empty option text"
+    },
+    {
+      "record_id": "iTeGLgJNuQjkRqeTmKwWLs",
+      "reason": "empty option text"
+    }
+  ],
+  "source_file_sha256": {
+    "aokvqa_v1p0_train.json": "94820c4452d29102365647598c54608d4f48f56bee01b514c996a09cc0972029",
+    "aokvqa_v1p0_val.json": "fd90b05dec8d78d341b69d9516c54a9b30dd4c12c3545599dab5d6f725aba6b4"
+  }
 }

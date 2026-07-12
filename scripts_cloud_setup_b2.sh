@@ -115,6 +115,10 @@ if [[ "$SETUP_DEEPSEEK" == "1" ]]; then
     source .venv-dsvl2/bin/activate
     pip install --upgrade pip -q
     pip install -r config/env_deepseek_vl2_requirements.txt -q
+    # adapter deps the package does not declare (also in newer req files;
+    # explicit here because the bundle may carry an older copy): numpy must
+    # stay 1.x for the torch 2.0.1-era stack.
+    pip install "numpy<2" pillow -q
     # attrdict (transitive dep) is import-broken on Python >= 3.10; replace
     # with the maintained fork AFTER install (both ship the same module).
     pip uninstall -y attrdict -q || true

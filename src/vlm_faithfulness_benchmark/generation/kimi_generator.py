@@ -11,7 +11,19 @@ Loads via ``transformers`` with ``trust_remote_code=True`` (Moonshot ships
 the modeling code in the checkpoint repo). 16B MoE, ~2.8B active; ~32 GB
 bf16 — cloud-class for full precision; the local 24 GB card can exercise
 the plumbing only under 8-bit quantization, which changes the composite
-identity and is therefore **never** used for corpus runs.
+identity and is therefore **never** used for corpus runs. Quantization
+enforcement (panel F-11): the identity honestly records the quantized
+dtype (detection), and the mass-run driver ``scripts_run_shard.py``
+refuses any identity whose dtype is not bf16 before a single record is
+committed (prevention at the only ledger-writing entry point).
+
+Inference follows the model card's documented TWO-STEP path (panel F-01/
+F-04: the one-step tokenizing chat-template call is not the published
+interface): first ``apply_chat_template(..., tokenize=False)`` renders the
+prompt text, then ``processor(images=..., text=...)`` builds the batch.
+Every call asserts the processed inputs actually carry image features —
+the silent failure mode (text-only inputs scoring without the image) would
+invalidate the lane while looking healthy, so it must halt instead.
 
 **Extraction contract ``aokvqa-mc-kimi-v1`` (pinned):** plain instruct
 model — the shared three answer rules + ``Rationale:`` marker rule apply
@@ -20,21 +32,23 @@ directly to the decoded text.
 Decoding: greedy, ``do_sample=False``, ``max_new_tokens=160``.
 
 **Option scorer (contract ``option-letter-logprob-kimi-v1``):** forced
-assistant reply ``"<LETTER>."``, span located by unique-subsequence search
-(never assumed); ambiguity halts.
+assistant reply ``"<LETTER>."``; the span is the prefix/suffix diff between
+the with-reply and generation-prompt renders (never assumed), verified by
+decoding; any mismatch halts.
 """
 
 from __future__ import annotations
 
 import string
 from pathlib import Path
+from typing import Any
 
 from vlm_faithfulness_benchmark.generation.harness import GenerationOutcome
 from vlm_faithfulness_benchmark.generation.identity import GeneratorId
 from vlm_faithfulness_benchmark.generation.mc_extraction import (
     RATIONALE_MARKER,
     extract_mc_outcome,
-    locate_unique_subsequence,
+    forced_reply_span,
 )
 from vlm_faithfulness_benchmark.ingestion.aokvqa import SourceRecord
 
@@ -205,22 +219,7 @@ class KimiGenerator:
 
         if isinstance(image, np.ndarray):
             image = Image.fromarray(image)
-        messages = [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "image", "image": image},
-                    {"type": "text", "text": build_prompt(record)},
-                ],
-            }
-        ]
-        inputs = self._processor.apply_chat_template(
-            messages,
-            add_generation_prompt=True,
-            tokenize=True,
-            return_dict=True,
-            return_tensors="pt",
-        ).to(self._model.device)
+        inputs = self._process(image, build_prompt(record), reply=None)
         with self._torch.inference_mode():
             generated = self._model.generate(  # type: ignore[misc]
                 **inputs,
@@ -232,6 +231,49 @@ class KimiGenerator:
         text = self._processor.decode(new_tokens, skip_special_tokens=True)
         return extract_outcome(text, record.options)
 
+    def _process(self, image: "object", prompt: str, reply: str | None) -> Any:
+        """Build model inputs via the documented two-step processor path.
+
+        Args:
+            image: PIL image for the user turn.
+            prompt: The user-turn text.
+            reply: Forced assistant reply, or None for a generation prompt.
+
+        Returns:
+            The processor's batch on device, guaranteed to carry image
+            features (transformers' untyped BatchFeature — the Any boundary
+            is confined to this method's return).
+
+        Raises:
+            AssertionError: If the processed batch has no image features —
+                text-only inputs would silently invalidate the lane.
+        """
+        messages: list[dict[str, object]] = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image", "image": image},
+                    {"type": "text", "text": prompt},
+                ],
+            }
+        ]
+        if reply is not None:
+            messages.append(
+                {"role": "assistant", "content": [{"type": "text", "text": reply}]}
+            )
+        text = self._processor.apply_chat_template(
+            messages, add_generation_prompt=reply is None, tokenize=False
+        )
+        inputs = self._processor(
+            images=image, text=text, return_tensors="pt", padding=True
+        ).to(self._model.device)
+        # Panel F-04: halt if the batch silently dropped the image — a
+        # text-only lane would look healthy while measuring nothing.
+        assert "pixel_values" in inputs and inputs["pixel_values"].numel() > 0, (
+            "kimi processor produced no image features (text-only inputs refused)"
+        )
+        return inputs
+
     def score_options(
         self, record: SourceRecord, image_override: "object | None" = None
     ) -> tuple[float, ...]:
@@ -239,8 +281,8 @@ class KimiGenerator:
 
         Contract ``option-letter-logprob-kimi-v1``: per option, one forward
         pass over the conversation with the assistant turn forced to
-        ``"<LETTER>."``; the reply span is located by unique-subsequence
-        search after the prompt boundary. Ambiguity halts.
+        ``"<LETTER>."``; the reply span is the prefix/suffix diff against
+        the generation-prompt render, verified by decoding. Mismatch halts.
 
         Args:
             record: The Source Record (prompt source).
@@ -263,35 +305,25 @@ class KimiGenerator:
             pil = image_override  # type: ignore[assignment]
         scores: list[float] = []
         prompt = build_prompt(record)
+        ids_without: list[int] = self._process(pil, prompt, reply=None)[
+            "input_ids"
+        ][0].tolist()
         for i in range(len(record.options)):
             reply = f"{string.ascii_uppercase[i]}."
-            messages = [
-                {"role": "user", "content": [
-                    {"type": "image", "image": pil},
-                    {"type": "text", "text": prompt},
-                ]},
-                {"role": "assistant", "content": [{"type": "text", "text": reply}]},
-            ]
-            inputs = self._processor.apply_chat_template(
-                messages, add_generation_prompt=False, tokenize=True,
-                return_dict=True, return_tensors="pt",
-            ).to(self._model.device)
-            prompt_len = int(
-                self._processor.apply_chat_template(
-                    messages[:1], add_generation_prompt=True, tokenize=True,
-                    return_dict=True, return_tensors="pt",
-                )["input_ids"].shape[1]
-            )
-            reply_ids: list[int] = self._processor.tokenizer(
-                reply, add_special_tokens=False
-            )["input_ids"]
+            inputs = self._process(pil, prompt, reply=reply)
             ids = inputs["input_ids"][0]
-            span_start = locate_unique_subsequence(ids.tolist(), reply_ids, prompt_len)
+            start, end = forced_reply_span(ids_without, ids.tolist())
+            decoded = self._processor.tokenizer.decode(
+                ids[start:end], skip_special_tokens=True
+            ).strip()
+            # Verify by decoding, never by assumption (pilot-v1 defect class).
+            assert decoded == reply, (
+                f"scorer alignment defect: located span decodes to {decoded!r}, "
+                f"expected {reply!r}"
+            )
             with self._torch.inference_mode():
                 logits = self._model(**inputs).logits
             logprobs = self._torch.log_softmax(logits[0, :-1], dim=-1)
-            span = logprobs[span_start - 1 : span_start - 1 + len(reply_ids)].gather(
-                1, ids[span_start : span_start + len(reply_ids)].unsqueeze(1)
-            )
+            span = logprobs[start - 1 : end - 1].gather(1, ids[start:end].unsqueeze(1))
             scores.append(float(span.sum().item()))
         return tuple(scores)

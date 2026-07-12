@@ -17,7 +17,7 @@ from vlm_faithfulness_benchmark.generation import (
 )
 from vlm_faithfulness_benchmark.generation.mc_extraction import (
     extract_mc_outcome,
-    locate_unique_subsequence,
+    forced_reply_span,
     strip_think_block,
 )
 
@@ -35,6 +35,15 @@ SHARED_CASES = [
     ("E. something\nRationale: out of range.", None, "out of range."),  # letter > options
     ("A. cigarette\nNo marker here.", "cigarette", None),  # missing rationale
     ("", None, None),  # empty output
+    # Panel F-10: edge shapes the battery previously left unpinned.
+    ("B: cigar\nRationale: colon anchor.", "cigar", "colon anchor."),  # rule-1 ":"
+    ("a.\nRationale: lowercase anchored.", "cigarette", "lowercase anchored."),
+    ("b\nRationale: lowercase bare.", "cigar", "lowercase bare."),
+    ("A. cigarette Rationale: same-line marker.", "cigarette", "same-line marker."),
+    ("Ａ. fullwidth\nRationale: unicode letter.", None, "unicode letter."),
+    ("AB. option\nRationale: two letters.", None, "two letters."),
+    ("A. cigarette or B. cigar\nRationale: first anchor wins.", "cigarette",
+     "first anchor wins."),
 ]
 
 
@@ -142,6 +151,13 @@ class TestGlmThinkContract:
         """strip_think_block on sentinel-free text is (stripped) identity."""
         assert strip_think_block("  plain answer  ") == "plain answer"
 
+    def test_rationale_quoting_a_sentinel_is_never_mutated(self) -> None:
+        """Sentinel cleanup is confined to the answer region (panel F-04)."""
+        text = '<think>x</think>B.\nRationale: the sign literally reads "<answer>".'
+        outcome = glm_generator.extract_outcome(text, OPTIONS)
+        assert outcome.chosen_answer == "cigar"
+        assert outcome.rationale == 'the sign literally reads "<answer>".'
+
 
 @pytest.mark.parametrize(
     "module", [deepseek_generator, kimi_generator], ids=["deepseek", "kimi"]
@@ -153,28 +169,32 @@ def test_passthrough_contracts_match_shared_core(module: object) -> None:
         assert (outcome.chosen_answer, outcome.rationale) == (chosen, rationale)
 
 
-class TestLocateUniqueSubsequence:
-    """The scorer-alignment primitive: locate, never assume; ambiguity halts."""
+class TestForcedReplySpan:
+    """The scorer-alignment primitive: diff the renders, never assume."""
 
-    def test_unique_hit_is_found(self) -> None:
-        """A single occurrence after the boundary returns its index."""
-        assert locate_unique_subsequence([9, 9, 1, 2, 3, 9], [2, 3], start=2) == 3
+    def test_strict_prefix_insertion(self) -> None:
+        """Reply appended after the shared prefix (DeepSeek inference shape)."""
+        assert forced_reply_span([1, 2, 3], [1, 2, 3, 7, 8]) == (3, 5)
 
-    def test_occurrence_before_start_is_ignored(self) -> None:
-        """Prompt-region occurrences are outside the search window."""
-        assert locate_unique_subsequence([2, 3, 0, 2, 3], [2, 3], start=1) == 3
+    def test_insertion_with_shared_suffix(self) -> None:
+        """Template end-of-turn scaffold after the reply is excluded."""
+        assert forced_reply_span([1, 2, 9], [1, 2, 7, 8, 9]) == (2, 4)
 
-    def test_zero_hits_halt(self) -> None:
-        """No occurrence ⇒ AssertionError (halt, never mis-score)."""
-        with pytest.raises(AssertionError, match="found 0 times"):
-            locate_unique_subsequence([1, 2, 3], [7, 8], start=0)
+    def test_leading_space_merge_is_captured(self) -> None:
+        """A boundary token that changes with the reply joins the span.
 
-    def test_multiple_hits_halt(self) -> None:
-        """Ambiguous occurrences ⇒ AssertionError (halt, never mis-score)."""
-        with pytest.raises(AssertionError, match="found 2 times"):
-            locate_unique_subsequence([2, 3, 2, 3], [2, 3], start=0)
+        The F-03 failure shape: ``": "`` merging with the reply's first
+        character produces a token absent from the empty render; the diff
+        includes it, where a standalone-needle search would find nothing.
+        """
+        assert forced_reply_span([1, 2, 30], [1, 2, 31, 8, 30]) == (2, 4)
 
-    def test_empty_needle_halts(self) -> None:
-        """An empty reply sequence is a caller bug, not a score of zero."""
-        with pytest.raises(AssertionError, match="empty reply"):
-            locate_unique_subsequence([1, 2], [], start=0)
+    def test_identical_renders_halt(self) -> None:
+        """No inserted region ⇒ AssertionError (halt, never mis-score)."""
+        with pytest.raises(AssertionError, match="empty"):
+            forced_reply_span([1, 2, 3], [1, 2, 3])
+
+    def test_span_at_sequence_start_halts(self) -> None:
+        """A span with no predecessor position cannot be scored (F-07)."""
+        with pytest.raises(AssertionError, match="predecessor|empty"):
+            forced_reply_span([9, 1], [7, 9, 1])

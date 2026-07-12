@@ -20,11 +20,25 @@ the composite identity.
 **Option scorer (contract ``option-letter-logprob-glm-v1``):** same reading
 as Qwen's v1.1 — per option, the total log-probability of the forced
 assistant reply ``"<LETTER>."`` — but the reply span is *located*, not
-assumed: the chat template may inject thinking scaffold tokens into the
-assistant turn, so the scorer searches for the reply token subsequence
-after the prompt boundary and asserts it occurs exactly once. Any
-ambiguity halts the run rather than mis-scoring (the pilot-v1 defect class
-must halt, never silently misread).
+assumed: the span is the prefix/suffix diff between the with-reply render
+and the generation-prompt render (:func:`..mc_extraction.forced_reply_span`
+— no assumption about in-context tokenization, panel F-03), verified by
+decoding the span back to the reply text. Any mismatch halts the run
+rather than mis-scoring (the pilot-v1 defect class must halt, never
+silently misread). The span may include turn-final scaffold the template
+appends after the reply; it is identical across options and is part of the
+pinned reading.
+
+**Construct note (pinned decision, panel F-05/C3c):** the benchmark's
+object of study is the model's *stated* rationale — the visible
+explanation presented alongside the answer, the same construct read from
+every non-thinking generator. The ``<think>`` block is upstream scratchpad,
+not the stated rationale, and using it would break cross-generator
+comparability. Consequence: GLM instances whose visible text carries no
+``Rationale:`` marker yield ``rationale=None`` (retained incomplete, CC4).
+The marker-compliance and unclosed-think rates are measured in the local
+rehearsal smoke; a material attrition rate escalates to the maintainer
+BEFORE the mass run (it is a selection effect on the retained sample).
 """
 
 from __future__ import annotations
@@ -37,7 +51,7 @@ from vlm_faithfulness_benchmark.generation.identity import GeneratorId
 from vlm_faithfulness_benchmark.generation.mc_extraction import (
     RATIONALE_MARKER,
     extract_mc_outcome,
-    locate_unique_subsequence,
+    forced_reply_span,
     strip_think_block,
 )
 from vlm_faithfulness_benchmark.ingestion.aokvqa import SourceRecord
@@ -47,7 +61,6 @@ __all__ = [
     "OPTION_SCORER_ID",
     "build_prompt",
     "extract_outcome",
-    "locate_unique_subsequence",
     "GlmGenerator",
 ]
 
@@ -275,22 +288,25 @@ class GlmGenerator:
                 messages, add_generation_prompt=False, tokenize=True,
                 return_dict=True, return_tensors="pt",
             ).to(self._model.device)
-            prompt_len = int(
-                self._processor.apply_chat_template(
-                    messages[:1], add_generation_prompt=True, tokenize=True,
-                    return_dict=True, return_tensors="pt",
-                )["input_ids"].shape[1]
-            )
-            reply_ids: list[int] = self._processor.tokenizer(
-                reply, add_special_tokens=False
-            )["input_ids"]
+            ids_without: list[int] = self._processor.apply_chat_template(
+                messages[:1], add_generation_prompt=True, tokenize=True,
+                return_dict=True, return_tensors="pt",
+            )["input_ids"][0].tolist()
             ids = inputs["input_ids"][0]
-            span_start = locate_unique_subsequence(ids.tolist(), reply_ids, prompt_len)
+            start, end = forced_reply_span(ids_without, ids.tolist())
+            decoded = self._processor.tokenizer.decode(
+                ids[start:end], skip_special_tokens=True
+            ).strip()
+            # Verify by decoding, never by assumption (pilot-v1 defect class).
+            assert decoded == reply, (
+                f"scorer alignment defect: located span decodes to {decoded!r}, "
+                f"expected {reply!r}"
+            )
             with self._torch.inference_mode():
                 logits = self._model(**inputs).logits
             logprobs = self._torch.log_softmax(logits[0, :-1], dim=-1)
-            span = logprobs[span_start - 1 : span_start - 1 + len(reply_ids)].gather(
-                1, ids[span_start : span_start + len(reply_ids)].unsqueeze(1)
+            span = logprobs[start - 1 : end - 1].gather(
+                1, ids[start:end].unsqueeze(1)
             )
             scores.append(float(span.sum().item()))
         return tuple(scores)

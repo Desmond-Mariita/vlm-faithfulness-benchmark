@@ -2,19 +2,25 @@
 #
 # DeepSeek-VL2 is not natively supported by `transformers`; it loads through
 # DeepSeek's own `deepseek_vl2` package (github.com/deepseek-ai/DeepSeek-VL2),
-# which pins an OLDER transformers than the Qwen/GLM adapters require
-# (pyproject pins transformers>=4.57 for the main env). The sharded mass-run
-# driver runs this adapter in its own venv built from this file; the two
-# environments never share a process.
+# whose pyproject pins its stack EXACTLY (torch==2.0.1, transformers==4.38.2,
+# xformers, timm, attrdict). Those pins are load-bearing — the modeling code
+# imports symbols removed from newer transformers — so this file adds NO
+# competing version constraints: the package drives the stack (panel F-01/
+# F-03: an added torch floor made the file pip-unsatisfiable).
 #
-# Hardware note (recorded in the M9 plan): the old stack is a risk on
-# Blackwell-generation rentals (RTX PRO 6000 needs very recent torch/CUDA);
-# an A100 PCIe rental is the safe choice if this lane is exercised.
-# Exact `pip freeze` of the venv actually used is captured into the run
-# evidence at rental time (the pins below are the *inputs*, not the record).
+# KNOWN WORKAROUNDS (panel F-02, verified against upstream issues):
+# - `attrdict` (transitive dep) is abandoned and import-broken on
+#   Python >= 3.10. Build this venv with Python 3.9, OR install `attrdict3`
+#   FIRST (line below) so the import resolves before deepseek_vl2 lands.
+# - torch==2.0.1 has no Blackwell support: this lane REQUIRES an
+#   Ampere-class rental (A100 PCIe per the M9 plan), not the RTX PRO 6000.
+#
+# The attrdict fix-up runs AFTER this file installs (see
+# scripts_cloud_setup_b2.sh: uninstall attrdict, install attrdict3) because
+# both distributions ship the same `attrdict` module and install order via
+# pip is not guaranteed.
+#
+# The exact `pip freeze` of the venv actually used is captured into the run
+# evidence at rental time (these lines are the inputs, not the record).
 
 deepseek_vl2 @ git+https://github.com/deepseek-ai/DeepSeek-VL2.git
-# deepseek_vl2's own setup pulls its pinned transformers/timm/attrdict etc.
-torch>=2.1
-torchvision>=0.16
-accelerate>=1.0

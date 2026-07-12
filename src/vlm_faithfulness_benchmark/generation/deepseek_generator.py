@@ -29,8 +29,12 @@ Qwen pin; no thinking budget needed).
 
 **Option scorer (contract ``option-letter-logprob-dsvl2-v1``):** per
 option, the total log-probability of the forced assistant reply
-``"<LETTER>."``, computed through DeepSeek's processor/embedding path; the
-reply span is located by unique-subsequence search (never assumed).
+``"<LETTER>."``, computed through DeepSeek's processor/embedding path. The
+reply span is the prefix/suffix diff between the with-reply render and the
+empty-reply render (panel F-03: the conversation template renders
+``<|Assistant|>: <reply>``, so the reply's first token carries a
+leading-space BPE prefix that standalone tokenization would never match —
+the diff makes no such assumption), verified by decoding; mismatch halts.
 """
 
 from __future__ import annotations
@@ -44,7 +48,7 @@ from vlm_faithfulness_benchmark.generation.identity import GeneratorId
 from vlm_faithfulness_benchmark.generation.mc_extraction import (
     RATIONALE_MARKER,
     extract_mc_outcome,
-    locate_unique_subsequence,
+    forced_reply_span,
 )
 from vlm_faithfulness_benchmark.ingestion.aokvqa import SourceRecord
 
@@ -265,9 +269,9 @@ class DeepseekVL2Generator:
 
         Contract ``option-letter-logprob-dsvl2-v1``: the conversation is
         rendered with the assistant turn forced to ``"<LETTER>."``; the
-        reply token span is located by unique-subsequence search after the
-        empty-reply render length (never assumed), and its total
-        log-probability is read from one forward pass. Ambiguity halts.
+        reply span is the prefix/suffix diff against the empty-reply render
+        (never assumed), verified by decoding, and its total
+        log-probability is read from one forward pass. Mismatch halts.
 
         Args:
             record: The Source Record (prompt source).
@@ -287,20 +291,23 @@ class DeepseekVL2Generator:
             pil = Image.fromarray(image_override)
         else:
             pil = image_override
-        empty_len = int(self._prepare(record, pil, reply="").input_ids.shape[1])
+        ids_without: list[int] = (
+            self._prepare(record, pil, reply="").input_ids[0].tolist()
+        )
         scores: list[float] = []
         for i in range(len(record.options)):
             reply = f"{string.ascii_uppercase[i]}."
             prepared = self._prepare(record, pil, reply=reply)
             ids = prepared.input_ids[0]
-            reply_ids: list[int] = self._tokenizer(reply, add_special_tokens=False)[
-                "input_ids"
-            ]
-            # The forced reply begins at/after the empty-render length minus
-            # any trailing end-of-turn tokens the empty render already held;
-            # search from a small safety margin before that boundary.
-            search_from = max(0, empty_len - 8)
-            span_start = locate_unique_subsequence(ids.tolist(), reply_ids, search_from)
+            start, end = forced_reply_span(ids_without, ids.tolist())
+            decoded = self._tokenizer.decode(
+                ids[start:end], skip_special_tokens=True
+            ).strip()
+            # Verify by decoding, never by assumption (pilot-v1 defect class).
+            assert decoded == reply, (
+                f"scorer alignment defect: located span decodes to {decoded!r}, "
+                f"expected {reply!r}"
+            )
             with self._torch.inference_mode():
                 inputs_embeds = self._model.prepare_inputs_embeds(**prepared)
                 logits = self._model.language(
@@ -308,8 +315,6 @@ class DeepseekVL2Generator:
                     attention_mask=prepared.attention_mask,
                 ).logits
             logprobs = self._torch.log_softmax(logits[0, :-1], dim=-1)
-            span = logprobs[span_start - 1 : span_start - 1 + len(reply_ids)].gather(
-                1, ids[span_start : span_start + len(reply_ids)].unsqueeze(1)
-            )
+            span = logprobs[start - 1 : end - 1].gather(1, ids[start:end].unsqueeze(1))
             scores.append(float(span.sum().item()))
         return tuple(scores)

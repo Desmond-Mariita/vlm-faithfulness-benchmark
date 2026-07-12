@@ -32,7 +32,7 @@ from vlm_faithfulness_benchmark.generation.harness import GenerationOutcome
 __all__ = [
     "RATIONALE_MARKER",
     "extract_mc_outcome",
-    "locate_unique_subsequence",
+    "forced_reply_span",
     "strip_think_block",
 ]
 
@@ -63,41 +63,59 @@ def strip_think_block(text: str) -> str | None:
         if not closed:
             return None
         stripped = tail
+    # Sentinel cleanup is confined to the answer region (everything before
+    # the rationale marker): a rationale that legitimately QUOTES a sentinel
+    # string must never be mutated (panel F-04, CC4-adjacent).
+    head, marker, rationale_tail = stripped.partition(RATIONALE_MARKER)
     for sentinel in _BOX_SENTINELS:
-        stripped = stripped.replace(sentinel, "")
-    return stripped.strip()
+        head = head.replace(sentinel, "")
+    return (head + marker + rationale_tail).strip()
 
 
-def locate_unique_subsequence(haystack: list[int], needle: list[int], start: int) -> int:
-    """Find the unique occurrence of a token subsequence at/after ``start``.
+def forced_reply_span(ids_without: list[int], ids_with: list[int]) -> tuple[int, int]:
+    r"""Locate a forced assistant reply by prefix/suffix diff of two renders.
 
-    Scorer-alignment primitive shared by the multi-generator adapters:
-    chat templates may inject scaffold tokens around a forced assistant
-    reply, so the reply span is *located*, never assumed — and ambiguity
-    halts rather than mis-scores (the pilot-v1 defect class must halt).
+    Scorer-alignment primitive shared by the multi-generator adapters
+    (panel F-03 replaced the earlier standalone-needle search): the reply
+    span is the region of the with-reply render not shared with the
+    without-reply render. This makes NO assumption about how the tokenizer
+    splits the reply in context (leading-space BPE merges, template
+    scaffolds) — callers must still verify by decoding the span and halt
+    on mismatch (the pilot-v1 defect class must halt, never mis-score).
+
+    LaTeX: p = \\max\\{k : a_{<k} = b_{<k}\\},\\;
+    s = \\max\\{k \\le \\min(|a|,|b|) - p : a_{>|a|-k} = b_{>|b|-k}\\};
+    span = [p, |b| - s).
 
     Args:
-        haystack: Full input-id sequence.
-        needle: Reply token ids to locate.
-        start: First index eligible to begin a match (the prompt boundary).
+        ids_without: Input-id sequence rendered WITHOUT the forced reply
+            (e.g. generation prompt, or an empty assistant turn).
+        ids_with: Input-id sequence rendered WITH the forced reply.
 
     Returns:
-        The start index of the single occurrence.
+        ``(start, end)`` — the half-open inserted region in ``ids_with``.
 
     Raises:
-        AssertionError: If the subsequence occurs zero or multiple times.
+        AssertionError: If the diff region is empty or starts at position 0
+            (a predecessor position is required to read next-token
+            log-probabilities).
     """
-    assert needle, "empty reply token sequence"
-    hits = [
-        i
-        for i in range(start, len(haystack) - len(needle) + 1)
-        if haystack[i : i + len(needle)] == needle
-    ]
-    assert len(hits) == 1, (
-        f"scorer alignment defect: reply subsequence found {len(hits)} times "
-        "after the prompt boundary (expected exactly 1)"
+    limit = min(len(ids_without), len(ids_with))
+    p = 0
+    while p < limit and ids_without[p] == ids_with[p]:
+        p += 1
+    s = 0
+    while (
+        s < limit - p
+        and ids_without[len(ids_without) - 1 - s] == ids_with[len(ids_with) - 1 - s]
+    ):
+        s += 1
+    start, end = p, len(ids_with) - s
+    assert 0 < start < end, (
+        f"scorer alignment defect: forced-reply span [{start}, {end}) is empty "
+        "or lacks a predecessor position"
     )
-    return hits[0]
+    return start, end
 
 
 def extract_mc_outcome(text: str, options: tuple[str, ...]) -> GenerationOutcome:

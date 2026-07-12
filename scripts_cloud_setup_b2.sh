@@ -99,7 +99,12 @@ if [[ "$SETUP_DEEPSEEK" == "1" ]]; then
     source .venv-dsvl2/bin/activate
     pip install --upgrade pip -q
     pip install -r config/env_deepseek_vl2_requirements.txt -q
+    # attrdict (transitive dep) is import-broken on Python >= 3.10; replace
+    # with the maintained fork AFTER install (both ship the same module).
+    pip uninstall -y attrdict -q || true
+    pip install attrdict3 -q
     pip install -e . --no-deps -q   # benchmark package only; deps come from the spec file
+    python -c "import deepseek_vl2, attrdict; print('deepseek_vl2 import ok')"
     pip freeze > "$RUNS_DIR/../env_dsvl2_freeze.txt" || true
     deactivate
     success "DeepSeek venv ready (freeze recorded)"

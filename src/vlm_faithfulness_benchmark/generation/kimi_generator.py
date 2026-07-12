@@ -112,9 +112,22 @@ class KimiGenerator:
                 quantized subject is a different composite identity; the
                 identity string records it, and corpus-run drivers must
                 refuse it.
+
+        Raises:
+            AssertionError: If ``load_in_8bit`` is requested without
+                ``ALLOW_PLUMBING_TEST_MODE=1`` in the environment — the
+                quantized mode is a code-enforced invariant, not a
+                convention (panel Gemini F-02).
         """
+        import os
+
         import torch
         from transformers import AutoModelForCausalLM, AutoProcessor
+
+        assert not load_in_8bit or os.environ.get("ALLOW_PLUMBING_TEST_MODE") == "1", (
+            "quantized (8-bit) mode is plumbing-test only; set "
+            "ALLOW_PLUMBING_TEST_MODE=1 to acknowledge (never for corpus runs)"
+        )
 
         self._torch = torch
         self._image_root = image_root

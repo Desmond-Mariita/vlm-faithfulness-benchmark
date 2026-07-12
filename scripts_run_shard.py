@@ -174,15 +174,16 @@ def run_calibration_gate(
         hashlib.sha256("\n".join(ids).encode()).hexdigest() == gate["cal50_sha256"]
     ), "CAL-50 slice diverges from the registered pre-registration"
     parsed = agree = 0
-    for rec in slice_records:
+    for done, rec in enumerate(slice_records, start=1):
         outcome = gen(rec)  # type: ignore[operator]
-        if outcome.chosen_answer is None:
-            continue
-        parsed += 1
-        scores = gen.score_options(rec)  # type: ignore[attr-defined]
-        argmax = max(range(len(scores)), key=lambda i: scores[i])
-        if rec.options[argmax].strip().lower() == outcome.chosen_answer.strip().lower():
-            agree += 1
+        if outcome.chosen_answer is not None:
+            parsed += 1
+            scores = gen.score_options(rec)  # type: ignore[attr-defined]
+            argmax = max(range(len(scores)), key=lambda i: scores[i])
+            if rec.options[argmax].strip().lower() == outcome.chosen_answer.strip().lower():
+                agree += 1
+        if done % 10 == 0:
+            log(f"CAL-50 progress: {done}/50 (parsed={parsed} agree={agree})")
     n = len(slice_records)
     parseability = parsed / n
     agreement = agree / parsed if parsed else 0.0
@@ -302,7 +303,16 @@ def main() -> None:
 
     s02_ledger = RunLedger(run_dir / f"s02-{tag}.jsonl")
     t0 = time.time()
-    r1 = run_s02(shard, gen, gen_id, s02_ledger)  # type: ignore[arg-type]
+    s02_done = [0]
+
+    def s02_progress(_: str) -> None:
+        s02_done[0] += 1
+        if s02_done[0] % 100 == 0:
+            pace = (time.time() - t0) / s02_done[0]
+            eta_h = (len(shard) - s02_done[0]) * pace / 3600
+            log(f"s02 {s02_done[0]}/{len(shard)} ({pace:.1f}s/rec, ~{eta_h:.1f}h left)")
+
+    r1 = run_s02(shard, gen, gen_id, s02_ledger, on_progress=s02_progress)  # type: ignore[arg-type]
     log(f"s02: {dict(r1)} in {time.time() - t0:.0f}s")
     s02_payloads = {
         k.removesuffix("::output_tuple"): s02_ledger.payload(k) for k in s02_ledger.keys()
@@ -326,9 +336,10 @@ def main() -> None:
 
     def progress(_: str) -> None:
         done[0] += 1
-        if done[0] % 50 == 0:
+        if done[0] % 10 == 0:
             pace = (time.time() - t1) / done[0]
-            log(f"obs {done[0]}/{len(shard)} committed ({pace:.0f}s/record)")
+            eta_d = (len(shard) - done[0]) * pace / 86400
+            log(f"obs {done[0]}/{len(shard)} committed ({pace:.0f}s/rec, ~{eta_d:.1f}d left)")
 
     make_instance: Callable[[SourceRecord], InstanceId] = lambda rec: InstanceId(  # noqa: E731
         gen_id, rec.identity

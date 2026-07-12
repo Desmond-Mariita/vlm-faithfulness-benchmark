@@ -102,7 +102,16 @@ success "main venv ready"
 # ---- optional isolated DeepSeek-VL2 venv ----
 if [[ "$SETUP_DEEPSEEK" == "1" ]]; then
     info "building isolated DeepSeek-VL2 venv (.venv-dsvl2)..."
-    python3 -m venv .venv-dsvl2
+    # torch 2.0.1 (deepseek_vl2's exact pin) ships no wheels for
+    # Python >= 3.12; provision CPython 3.10 via uv when needed.
+    PYMINOR=$(python3 -c 'import sys; print(sys.version_info.minor)')
+    if [[ "$PYMINOR" -ge 12 ]]; then
+        command -v uv >/dev/null || curl -LsSf https://astral.sh/uv/install.sh | sh
+        export PATH="$HOME/.local/bin:$PATH"
+        uv venv --python 3.10 --seed .venv-dsvl2
+    else
+        python3 -m venv .venv-dsvl2
+    fi
     source .venv-dsvl2/bin/activate
     pip install --upgrade pip -q
     pip install -r config/env_deepseek_vl2_requirements.txt -q

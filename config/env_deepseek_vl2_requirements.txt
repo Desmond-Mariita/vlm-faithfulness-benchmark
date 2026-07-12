@@ -24,3 +24,7 @@
 # evidence at rental time (these lines are the inputs, not the record).
 
 deepseek_vl2 @ git+https://github.com/deepseek-ai/DeepSeek-VL2.git
+# adapter-side deps the package does not declare; numpy must stay 1.x —
+# the torch 2.0.1-era stack crashes against numpy 2.
+numpy<2
+pillow

@@ -1,0 +1,20 @@
+# Isolated environment for the DeepSeek-VL2 adapter ONLY.
+#
+# DeepSeek-VL2 is not natively supported by `transformers`; it loads through
+# DeepSeek's own `deepseek_vl2` package (github.com/deepseek-ai/DeepSeek-VL2),
+# which pins an OLDER transformers than the Qwen/GLM adapters require
+# (pyproject pins transformers>=4.57 for the main env). The sharded mass-run
+# driver runs this adapter in its own venv built from this file; the two
+# environments never share a process.
+#
+# Hardware note (recorded in the M9 plan): the old stack is a risk on
+# Blackwell-generation rentals (RTX PRO 6000 needs very recent torch/CUDA);
+# an A100 PCIe rental is the safe choice if this lane is exercised.
+# Exact `pip freeze` of the venv actually used is captured into the run
+# evidence at rental time (the pins below are the *inputs*, not the record).
+
+deepseek_vl2 @ git+https://github.com/deepseek-ai/DeepSeek-VL2.git
+# deepseek_vl2's own setup pulls its pinned transformers/timm/attrdict etc.
+torch>=2.1
+torchvision>=0.16
+accelerate>=1.0

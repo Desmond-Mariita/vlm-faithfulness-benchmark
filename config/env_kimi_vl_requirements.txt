@@ -16,5 +16,6 @@ accelerate>=1.0
 tiktoken
 blobfile
 bitsandbytes
+torchvision>=0.16
 pillow
 numpy

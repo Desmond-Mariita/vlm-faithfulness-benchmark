@@ -3,19 +3,27 @@ r"""GLM-4.6V-Flash generator adapter — second composite generator subject.
 Matrix rows: S02-post, CC7 (same subject per call), R3 (identity names every
 component), N4.6 (pinned per-generator extraction contract).
 
-**Extraction contract ``aokvqa-mc-glm-v1`` (pinned):** GLM-4.6V is a
-*thinking* model — it emits a ``<think>…</think>`` reasoning block before
-its visible answer, and may wrap the short answer in box/answer sentinels.
-The contract is: (a) strip the think block and sentinels via
-:func:`..mc_extraction.strip_think_block` — an *unclosed* think block means
-the token budget died mid-thought and the outcome is empty (CC4: never
-repaired); (b) apply the shared three answer rules + ``Rationale:`` marker
-rule (:func:`..mc_extraction.extract_mc_outcome`) to the visible text.
+**Corpus contract ``aokvqa-mc-glm-v2`` (pinned; D1 ratified by BM
+2026-07-12 on a 5-member panel position):** GLM-4.6V is natively a
+*thinking* model; the corpus contract runs it with the official template
+toggle ``enable_thinking=False``, so the visible rationale IS the model's
+entire stated reasoning — construct-identical to the non-thinking
+generators. Rehearsal (n=32): 100% parse + rationale yield, scorer
+agreement 0.844 (within the Qwen 0.85–0.90 precedent band), gold 0.81.
+Extraction: (a) strip any think block / sentinels via
+:func:`..mc_extraction.strip_think_block` (defensive — no-think output
+should carry none; an *unclosed* think block yields the empty outcome,
+CC4: never repaired); (b) apply the shared three answer rules +
+``Rationale:`` marker rule (:func:`..mc_extraction.extract_mc_outcome`).
 
-Decoding: greedy, ``do_sample=False``, ``num_beams=1``,
-``max_new_tokens=768`` — larger than Qwen's 160 because the thinking block
-consumes budget before the visible answer appears; the value is pinned in
-the composite identity.
+**Ablation contract ``aokvqa-mc-glm-v1`` (thinking mode, ablation-only):**
+native thinking mode, retained for the registered thinking-mode ablation
+("does deliberation change faithfulness labels?"). A distinct composite
+identity; its outputs never enter corpus labels.
+
+Decoding: greedy, ``do_sample=False``, ``num_beams=1``;
+``max_new_tokens=256`` (v2) / ``768`` (v1 — headroom for the think
+block); values pinned in the composite identity.
 
 **Option scorer (contract ``option-letter-logprob-glm-v1``):** same reading
 as Qwen's v1.1 — per option, the total log-probability of the forced
@@ -29,16 +37,14 @@ silently misread). The span may include turn-final scaffold the template
 appends after the reply; it is identical across options and is part of the
 pinned reading.
 
-**Construct note (pinned decision, panel F-05/C3c):** the benchmark's
-object of study is the model's *stated* rationale — the visible
-explanation presented alongside the answer, the same construct read from
-every non-thinking generator. The ``<think>`` block is upstream scratchpad,
-not the stated rationale, and using it would break cross-generator
-comparability. Consequence: GLM instances whose visible text carries no
-``Rationale:`` marker yield ``rationale=None`` (retained incomplete, CC4).
-The marker-compliance and unclosed-think rates are measured in the local
-rehearsal smoke; a material attrition rate escalates to the maintainer
-BEFORE the mass run (it is a selection effect on the retained sample).
+**Construct note (RESOLVED — D1, m9_d1_d2_unified_position.md):** the
+benchmark's object of study is the model's *stated* rationale. The panel's
+construct objection to reading only post-think text is dissolved by the v2
+no-think pin: with thinking disabled there is no hidden scratchpad — the
+visible rationale is the whole stated reasoning. The v1 thinking contract
+survives solely as the registered ablation arm. Paper disclosures required:
+the mode choice, both modes' rehearsal numbers (incl. gold 0.97→0.81), and
+this construct rationale (benchmark card / limitations).
 """
 
 from __future__ import annotations
@@ -60,16 +66,26 @@ from vlm_faithfulness_benchmark.ingestion.aokvqa import SourceRecord
 
 __all__ = [
     "EXTRACTION_CONTRACT_ID",
+    "EXTRACTION_CONTRACT_ID_THINKING",
     "OPTION_SCORER_ID",
     "build_prompt",
     "extract_outcome",
     "GlmGenerator",
 ]
 
-EXTRACTION_CONTRACT_ID = "aokvqa-mc-glm-v1"
+# D1 ratified (BM 2026-07-12, m9_d1_d2_unified_position.md): the CORPUS
+# contract is v2 = no-think mode — the visible rationale is the model's
+# entire stated reasoning, construct-identical to the non-thinking
+# generators. v1 (thinking mode) is retained ONLY for the registered
+# thinking-mode ablation; its outputs never enter corpus labels.
+EXTRACTION_CONTRACT_ID = "aokvqa-mc-glm-v2"
+EXTRACTION_CONTRACT_ID_THINKING = "aokvqa-mc-glm-v1"
 OPTION_SCORER_ID = "option-letter-logprob-glm-v1"
 _MODEL_ID = "zai-org/GLM-4.6V-Flash"
-_MAX_NEW_TOKENS = 768
+# Per-contract token budgets: thinking needs headroom for the think block;
+# no-think replies are short (rehearsal p100 well under 256).
+_MAX_NEW_TOKENS_NOTHINK = 256
+_MAX_NEW_TOKENS_THINKING = 768
 
 
 def build_prompt(record: SourceRecord) -> str:
@@ -116,19 +132,31 @@ def extract_outcome(generated_text: str, options: tuple[str, ...]) -> Generation
 class GlmGenerator:
     """The GLM-4.6V-Flash composite subject (CC7: one subject for every call)."""
 
-    def __init__(self, image_root: Path) -> None:
+    def __init__(self, image_root: Path, thinking: bool = False) -> None:
         """Load the model, processor, and pinned decoding configuration.
 
         Args:
             image_root: Directory containing the COCO pool images
                 (``<12-digit-id>.jpg``; Source Records reference
                 ``coco/<id>``).
+            thinking: False (default) = corpus contract aokvqa-mc-glm-v2
+                (template thinking toggle OFF). True = ablation-only
+                contract aokvqa-mc-glm-v1 (native thinking mode); a
+                different composite identity whose outputs never enter
+                corpus labels (D1, m9_d1_d2_unified_position.md).
         """
         import torch
         from transformers import AutoModelForImageTextToText, AutoProcessor
 
         self._torch = torch
         self._image_root = image_root
+        self._thinking = thinking
+        self._contract = (
+            EXTRACTION_CONTRACT_ID_THINKING if thinking else EXTRACTION_CONTRACT_ID
+        )
+        self._max_new_tokens = (
+            _MAX_NEW_TOKENS_THINKING if thinking else _MAX_NEW_TOKENS_NOTHINK
+        )
         # transformers' factories are untyped upstream; the boundary is
         # confined to these calls (mypy: no-untyped-call/misc).
         self._processor = AutoProcessor.from_pretrained(_MODEL_ID)  # type: ignore[no-untyped-call]
@@ -164,10 +192,13 @@ class GlmGenerator:
             {
                 "model": _MODEL_ID,
                 "revision": self._revision,
-                "decoding": f"greedy;beams=1;max_new_tokens={_MAX_NEW_TOKENS}",
-                "extraction_contract": EXTRACTION_CONTRACT_ID,
+                "decoding": (
+                    f"greedy;beams=1;max_new_tokens={self._max_new_tokens};"
+                    f"enable_thinking={self._thinking}"
+                ),
+                "extraction_contract": self._contract,
                 "option_scorer": OPTION_SCORER_ID,
-                "prompt_template": EXTRACTION_CONTRACT_ID,  # prompt is part of the contract
+                "prompt_template": self._contract,  # prompt is part of the contract
                 "image_preprocessing": "pil-rgb-native",
                 "dtype": "bfloat16",
             }
@@ -249,13 +280,14 @@ class GlmGenerator:
             tokenize=True,
             return_dict=True,
             return_tensors="pt",
+            enable_thinking=self._thinking,
         ).to(self._model.device)
         with self._torch.inference_mode():
             generated = self._model.generate(
                 **inputs,
                 do_sample=False,
                 num_beams=1,
-                max_new_tokens=_MAX_NEW_TOKENS,
+                max_new_tokens=self._max_new_tokens,
             )
         new_tokens = generated[0, inputs["input_ids"].shape[1] :]
         text = self._processor.decode(new_tokens, skip_special_tokens=True)

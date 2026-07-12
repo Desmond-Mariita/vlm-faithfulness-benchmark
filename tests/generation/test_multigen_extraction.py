@@ -74,19 +74,26 @@ def test_no_drift_from_frozen_qwen_copy(
 
 
 def test_contract_ids_are_distinct_pins() -> None:
-    """Each generator pins its own contract id (N4.6 — per-generator pin)."""
+    """Each generator pins its own contract id (N4.6 — per-generator pin).
+
+    GLM carries two (D1, prereg-m9-v1): v2 no-think is the CORPUS contract;
+    v1 thinking exists only for the registered ablation arm.
+    """
     ids = {
         qwen_generator.EXTRACTION_CONTRACT_ID,
         glm_generator.EXTRACTION_CONTRACT_ID,
+        glm_generator.EXTRACTION_CONTRACT_ID_THINKING,
         deepseek_generator.EXTRACTION_CONTRACT_ID,
         kimi_generator.EXTRACTION_CONTRACT_ID,
     }
     assert ids == {
         "aokvqa-mc-v1.1",
+        "aokvqa-mc-glm-v2",
         "aokvqa-mc-glm-v1",
         "aokvqa-mc-dsvl2-v1",
         "aokvqa-mc-kimi-v1",
     }
+    assert glm_generator.EXTRACTION_CONTRACT_ID == "aokvqa-mc-glm-v2"
 
 
 def test_prompts_are_generator_invariant() -> None:

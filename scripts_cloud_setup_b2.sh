@@ -153,13 +153,26 @@ success "ledger monitor started"
 success "setup complete — GPU work is NOT auto-started."
 cat <<'EOF'
 
-Run shards manually (each is resume-capable; rerun the same command after
-any preemption and it continues from the last committed record):
+FIRST: run the registered CAL-50 gate once per generator-contract in this
+environment (prereg-m9-v1; shards refuse to start without a passing
+artifact for the exact identity):
 
   source .venv/bin/activate
+  python scripts_run_shard.py --generator qwen --run-gate
+  python scripts_run_shard.py --generator glm  --run-gate
+
+Then run shards (each is resume-capable; rerun the same command after any
+preemption and it continues from the last committed record):
+
   python scripts_run_shard.py --generator qwen --shard-start 0     --shard-end 4549
   python scripts_run_shard.py --generator glm  --shard-start 0     --shard-end 4549
   ...
+
+Thinking-mode ablation lane (registered subset, positions 0-1999; runs
+AFTER corpus lanes; outputs never enter corpus labels):
+
+  python scripts_run_shard.py --generator glm-thinking --run-gate
+  python scripts_run_shard.py --generator glm-thinking --shard-start 0 --shard-end 2000
 
 DeepSeek lane (only with SETUP_DEEPSEEK=1 at setup):
 

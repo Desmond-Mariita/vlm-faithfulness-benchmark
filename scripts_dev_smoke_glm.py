@@ -28,15 +28,17 @@ from scripts_run_shard import load_registered_pool  # noqa: E402
 
 from vlm_faithfulness_benchmark.generation.glm_generator import GlmGenerator  # noqa: E402
 
-OUT = ROOT / "data/runs/rehearsal-glm-smoke.jsonl"
-
 
 def main() -> None:
     """Run the GLM rehearsal smoke over a fixed pool slice."""
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--n", type=int, default=12)
     ap.add_argument("--offset", type=int, default=1000)
+    ap.add_argument(
+        "--out", type=Path, default=ROOT / "data/runs/rehearsal-glm-smoke.jsonl"
+    )
     args = ap.parse_args()
+    OUT = args.out
 
     pool = load_registered_pool(ROOT / "config/pool_manifest_v1.json")
     records = pool[args.offset : args.offset + args.n]
@@ -107,7 +109,7 @@ def main() -> None:
         "mean_t_generate_s": round(sum(r["t_generate_s"] for r in rows) / max(1, len(rows)), 1),
         "mean_t_score_s": round(sum(r["t_score_s"] for r in rows) / max(1, len(rows)), 1),
     }
-    (ROOT / "data/runs/rehearsal-glm-summary.json").write_text(json.dumps(summary, indent=2) + "\n")
+    OUT.with_suffix(".summary.json").write_text(json.dumps(summary, indent=2) + "\n")
     print("SUMMARY:", json.dumps(summary), flush=True)
 
 

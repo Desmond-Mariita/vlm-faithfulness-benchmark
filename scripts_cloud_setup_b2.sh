@@ -95,6 +95,13 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip -q
 pip install -e ".[pipeline]" -q
+# Rental images often run older drivers than the newest torch wheels
+# require; fall back to cu126 builds instead of failing the whole setup.
+if ! python -c "import torch; assert torch.cuda.is_available()" 2>/dev/null; then
+    info "default torch wheels reject this driver — falling back to cu126 wheels..."
+    pip install -q --force-reinstall torch torchvision \
+        --index-url https://download.pytorch.org/whl/cu126
+fi
 python -c "import torch; assert torch.cuda.is_available(), 'no CUDA'; print('CUDA ok:', torch.cuda.get_device_name(0))"
 deactivate
 success "main venv ready"

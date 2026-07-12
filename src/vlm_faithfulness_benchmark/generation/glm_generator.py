@@ -45,6 +45,7 @@ from __future__ import annotations
 
 import string
 from pathlib import Path
+from typing import Any
 
 from vlm_faithfulness_benchmark.generation.harness import GenerationOutcome
 from vlm_faithfulness_benchmark.generation.identity import GeneratorId
@@ -123,17 +124,33 @@ class GlmGenerator:
                 ``coco/<id>``).
         """
         import torch
-        from transformers import AutoProcessor, Glm4vMoeForConditionalGeneration
+        from transformers import AutoModelForImageTextToText, AutoProcessor
 
         self._torch = torch
         self._image_root = image_root
         # transformers' factories are untyped upstream; the boundary is
         # confined to these calls (mypy: no-untyped-call/misc).
         self._processor = AutoProcessor.from_pretrained(_MODEL_ID)  # type: ignore[no-untyped-call]
-        self._model = Glm4vMoeForConditionalGeneration.from_pretrained(
-            _MODEL_ID, dtype=torch.bfloat16, device_map="cuda:0"
+        # Auto class resolves the checkpoint's DECLARED architecture
+        # (Glm4vForConditionalGeneration — Flash is DENSE 9B; the MoE class
+        # silently fabricated newly-initialized expert weights and OOMed:
+        # rehearsal finding 2026-07-12).
+        # With output_loading_info=True from_pretrained returns a 2-tuple;
+        # upstream stubs don't model that — Any confines the boundary.
+        loaded: Any = AutoModelForImageTextToText.from_pretrained(
+            _MODEL_ID, dtype=torch.bfloat16, device_map="cuda:0",
+            output_loading_info=True,
         )
-        self._model.eval()  # type: ignore[no-untyped-call]
+        self._model, loading_info = loaded
+        # A checkpoint/architecture mismatch surfaces as "missing keys"
+        # that transformers silently NEWLY INITIALIZES — garbage weights
+        # masquerading as a loaded subject. Halt, never degrade.
+        missing = loading_info.get("missing_keys", [])
+        assert not missing, (
+            f"checkpoint/architecture mismatch: {len(missing)} keys missing "
+            f"from the checkpoint would be newly initialized (e.g. {missing[:3]})"
+        )
+        self._model.eval()
         revision = getattr(self._model.config, "_commit_hash", None)
         # R3: a subject without a pinned weight revision is not a complete
         # composite identity — halt rather than record "unpinned".
@@ -233,7 +250,7 @@ class GlmGenerator:
             return_tensors="pt",
         ).to(self._model.device)
         with self._torch.inference_mode():
-            generated = self._model.generate(  # type: ignore[misc]
+            generated = self._model.generate(
                 **inputs,
                 do_sample=False,
                 num_beams=1,
@@ -241,6 +258,10 @@ class GlmGenerator:
             )
         new_tokens = generated[0, inputs["input_ids"].shape[1] :]
         text = self._processor.decode(new_tokens, skip_special_tokens=True)
+        # Diagnostics hook (rehearsal): the raw decoded text BEFORE the
+        # extraction contract, for think-block/marker-compliance audits.
+        # Never consumed by the pipeline (the contract output is the record).
+        self.last_raw_text: str = text
         return extract_outcome(text, record.options)
 
     def score_options(

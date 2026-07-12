@@ -135,23 +135,37 @@ class KimiGenerator:
         self._processor = AutoProcessor.from_pretrained(  # type: ignore[no-untyped-call]
             _MODEL_ID, trust_remote_code=True
         )
+        # With output_loading_info=True from_pretrained returns a 2-tuple;
+        # upstream stubs don't model that — Any confines the boundary.
+        loaded: Any
         if load_in_8bit:
             from transformers import BitsAndBytesConfig
 
-            self._model = AutoModelForCausalLM.from_pretrained(
+            loaded = AutoModelForCausalLM.from_pretrained(
                 _MODEL_ID,
                 trust_remote_code=True,
                 quantization_config=BitsAndBytesConfig(load_in_8bit=True),  # type: ignore[no-untyped-call]
                 device_map="cuda:0",
+                output_loading_info=True,
             )
         else:
-            self._model = AutoModelForCausalLM.from_pretrained(
+            loaded = AutoModelForCausalLM.from_pretrained(
                 _MODEL_ID,
                 trust_remote_code=True,
                 dtype=torch.bfloat16,
                 device_map="cuda:0",
+                output_loading_info=True,
             )
-        self._model.eval()  # type: ignore[no-untyped-call]
+        self._model, loading_info = loaded
+        # Halt on checkpoint/architecture mismatch (missing keys would be
+        # silently newly initialized — garbage weights; see GLM rehearsal
+        # finding 2026-07-12).
+        missing = loading_info.get("missing_keys", [])
+        assert not missing, (
+            f"checkpoint/architecture mismatch: {len(missing)} keys missing "
+            f"from the checkpoint would be newly initialized (e.g. {missing[:3]})"
+        )
+        self._model.eval()
         revision = getattr(self._model.config, "_commit_hash", None)
         # R3: halt rather than record an unpinned composite identity.
         assert revision, "R3: weight revision hash unavailable; refusing unpinned identity"
@@ -234,7 +248,7 @@ class KimiGenerator:
             image = Image.fromarray(image)
         inputs = self._process(image, build_prompt(record), reply=None)
         with self._torch.inference_mode():
-            generated = self._model.generate(  # type: ignore[misc]
+            generated = self._model.generate(
                 **inputs,
                 do_sample=False,
                 num_beams=1,
@@ -242,6 +256,8 @@ class KimiGenerator:
             )
         new_tokens = generated[0, inputs["input_ids"].shape[1] :]
         text = self._processor.decode(new_tokens, skip_special_tokens=True)
+        # Diagnostics hook (rehearsal): raw decoded text before the contract.
+        self.last_raw_text: str = text
         return extract_outcome(text, record.options)
 
     def _process(self, image: "object", prompt: str, reply: str | None) -> Any:

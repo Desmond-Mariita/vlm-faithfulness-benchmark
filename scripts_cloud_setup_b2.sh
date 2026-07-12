@@ -43,7 +43,7 @@ fail()    { echo -e "${RED}xx $1${RESET}"; exit 1; }
 
 # Interrupt trap: the ledgers are the run — push them before dying.
 trap 'echo "interrupt — emergency ledger sync";
-      rclone sync "$RUNS_DIR" "$REMOTE_NAME:$B2_BUCKET/runs_interrupt_$(date +%F_%H-%M)" || true' \
+      rclone sync "$RUNS_DIR" "$REMOTE_NAME:$B2_BUCKET/bench_runs_interrupt_$(date +%F_%H-%M)" || true' \
       SIGINT SIGTERM
 
 mkdir -p "$LOG_DIR"
@@ -66,18 +66,24 @@ rclone lsf "$REMOTE_NAME:$B2_BUCKET" >/dev/null 2>&1 \
     || fail "cannot list $REMOTE_NAME:$B2_BUCKET — check credentials/scoping"
 success "B2 remote configured and reachable"
 
-# ---- resumable bundle download + merge + extract ----
-info "downloading bundle parts ($PART_PATTERN)..."
-rclone copy "$REMOTE_NAME:$B2_BUCKET" "$WORKDIR" --include "$PART_PATTERN" --progress
-PART_COUNT=$(ls $PART_PATTERN 2>/dev/null | wc -l || echo 0)
-[[ "$PART_COUNT" -gt 0 ]] || fail "no bundle parts found in the bucket"
-success "downloaded $PART_COUNT parts"
+# ---- resumable bundle download + verify + merge + extract ----
+# The bundle lives under the bucket's bench/ prefix (with BUNDLE_SHA256SUMS).
+info "downloading bundle parts ($PART_PATTERN) from $B2_BUCKET/bench ..."
+rclone copy "$REMOTE_NAME:$B2_BUCKET/bench" "$WORKDIR" --progress
+shopt -s nullglob
+PARTS=($PART_PATTERN)
+shopt -u nullglob
+[[ "${#PARTS[@]}" -gt 0 ]] || fail "no bundle parts found under $B2_BUCKET/bench"
+success "downloaded ${#PARTS[@]} parts"
+
+info "verifying checksums ..."
+sha256sum -c BUNDLE_SHA256SUMS --ignore-missing || fail "bundle checksum mismatch"
 
 info "merging + extracting into $PROJECT_DIR ..."
-cat $PART_PATTERN > "$ARCHIVE_NAME"
+cat "${PARTS[@]}" > "$ARCHIVE_NAME"
 mkdir -p "$PROJECT_DIR"
 tar --no-same-owner -xzf "$ARCHIVE_NAME" -C "$PROJECT_DIR"
-rm -f $PART_PATTERN "$ARCHIVE_NAME"
+rm -f "${PARTS[@]}" "$ARCHIVE_NAME"
 [[ -f "$PROJECT_DIR/scripts_run_shard.py" ]] \
     || fail "bundle layout unexpected: scripts_run_shard.py not at project root"
 success "bundle extracted"
@@ -126,10 +132,10 @@ fi
 
 # ---- ledger backups: cron every 15 min + change-triggered monitor ----
 mkdir -p "$RUNS_DIR"
-rclone sync "$RUNS_DIR" "$REMOTE_NAME:$B2_BUCKET/runs_auto" --progress || true
-CRON_JOB="*/15 * * * * rclone sync $RUNS_DIR $REMOTE_NAME:$B2_BUCKET/runs_auto >> $CRON_LOG 2>&1"
+rclone sync "$RUNS_DIR" "$REMOTE_NAME:$B2_BUCKET/bench_runs_auto" --progress || true
+CRON_JOB="*/15 * * * * rclone sync $RUNS_DIR $REMOTE_NAME:$B2_BUCKET/bench_runs_auto >> $CRON_LOG 2>&1"
 EXISTING_CRON="$(crontab -l 2>/dev/null || true)"
-if ! echo "$EXISTING_CRON" | grep -Fq "$RUNS_DIR $REMOTE_NAME:$B2_BUCKET/runs_auto"; then
+if ! echo "$EXISTING_CRON" | grep -Fq "$RUNS_DIR $REMOTE_NAME:$B2_BUCKET/bench_runs_auto"; then
     (echo "$EXISTING_CRON"; echo "$CRON_JOB") | crontab -
 fi
 success "cron ledger backup installed (every 15 min)"
@@ -139,7 +145,7 @@ success "cron ledger backup installed (every 15 min)"
     while true; do
         state="$(find "$RUNS_DIR" -type f -name '*.jsonl' -printf '%T@ %s\n' 2>/dev/null | sort | md5sum)"
         if [[ -n "$state" && "$state" != "$last_state" ]]; then
-            rclone sync "$RUNS_DIR" "$REMOTE_NAME:$B2_BUCKET/runs_auto" \
+            rclone sync "$RUNS_DIR" "$REMOTE_NAME:$B2_BUCKET/bench_runs_auto" \
                 --log-file="$MONITOR_LOG" --log-level INFO \
                 || echo "[$(date)] sync failed" >> "$MONITOR_LOG"
             last_state="$state"

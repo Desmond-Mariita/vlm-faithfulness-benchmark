@@ -126,6 +126,23 @@ def load_registered_pool(manifest_path: Path) -> list[SourceRecord]:
     return records
 
 
+def progress_bar(done: int, total: int, width: int = 30) -> str:
+    """Render a textual progress bar for the shard logs.
+
+    Args:
+        done: Completed count.
+        total: Total count (positive).
+        width: Bar width in characters.
+
+    Returns:
+        A string like ``[############------------------]  40.0%``.
+    """
+    assert total > 0, "empty total"
+    frac = min(1.0, done / total)
+    filled = int(width * frac)
+    return f"[{'#' * filled}{'-' * (width - filled)}] {100 * frac:5.1f}%"
+
+
 def wilson_interval(successes: int, n: int, z: float = 1.96) -> tuple[float, float]:
     r"""Wilson score 95% confidence interval for a binomial proportion.
 
@@ -310,7 +327,8 @@ def main() -> None:
         if s02_done[0] % 100 == 0:
             pace = (time.time() - t0) / s02_done[0]
             eta_h = (len(shard) - s02_done[0]) * pace / 3600
-            log(f"s02 {s02_done[0]}/{len(shard)} ({pace:.1f}s/rec, ~{eta_h:.1f}h left)")
+            log(f"s02 {progress_bar(s02_done[0], len(shard))} "
+                f"{s02_done[0]}/{len(shard)} ({pace:.1f}s/rec, ~{eta_h:.1f}h left)")
 
     r1 = run_s02(shard, gen, gen_id, s02_ledger, on_progress=s02_progress)  # type: ignore[arg-type]
     log(f"s02: {dict(r1)} in {time.time() - t0:.0f}s")
@@ -339,7 +357,8 @@ def main() -> None:
         if done[0] % 10 == 0:
             pace = (time.time() - t1) / done[0]
             eta_d = (len(shard) - done[0]) * pace / 86400
-            log(f"obs {done[0]}/{len(shard)} committed ({pace:.0f}s/rec, ~{eta_d:.1f}d left)")
+            log(f"obs {progress_bar(done[0], len(shard))} "
+                f"{done[0]}/{len(shard)} committed ({pace:.0f}s/rec, ~{eta_d:.1f}d left)")
 
     make_instance: Callable[[SourceRecord], InstanceId] = lambda rec: InstanceId(  # noqa: E731
         gen_id, rec.identity

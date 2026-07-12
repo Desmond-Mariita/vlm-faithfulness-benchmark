@@ -53,6 +53,7 @@ from vlm_faithfulness_benchmark.generation.mc_extraction import (
     RATIONALE_MARKER,
     extract_mc_outcome,
     forced_reply_span,
+    refine_reply_span,
     strip_think_block,
 )
 from vlm_faithfulness_benchmark.ingestion.aokvqa import SourceRecord
@@ -314,14 +315,16 @@ class GlmGenerator:
                 return_dict=True, return_tensors="pt",
             )["input_ids"][0].tolist()
             ids = inputs["input_ids"][0]
-            start, end = forced_reply_span(ids_without, ids.tolist())
-            decoded = self._processor.tokenizer.decode(
-                ids[start:end], skip_special_tokens=True
-            ).strip()
-            # Verify by decoding, never by assumption (pilot-v1 defect class).
-            assert decoded == reply, (
-                f"scorer alignment defect: located span decodes to {decoded!r}, "
-                f"expected {reply!r}"
+            ids_list = ids.tolist()
+            start, end = forced_reply_span(ids_without, ids_list)
+            # The template injects an empty <think></think> scaffold inside
+            # the insertion (rehearsal 2026-07-12); refine to the minimal
+            # sub-span decoding to the reply — verified, halt on ambiguity.
+            start, end = refine_reply_span(
+                ids_list, start, end, reply,
+                lambda span: self._processor.tokenizer.decode(
+                    span, skip_special_tokens=True
+                ),
             )
             with self._torch.inference_mode():
                 logits = self._model(**inputs).logits

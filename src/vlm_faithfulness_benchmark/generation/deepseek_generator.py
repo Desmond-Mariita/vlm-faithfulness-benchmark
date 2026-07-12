@@ -49,6 +49,7 @@ from vlm_faithfulness_benchmark.generation.mc_extraction import (
     RATIONALE_MARKER,
     extract_mc_outcome,
     forced_reply_span,
+    refine_reply_span,
 )
 from vlm_faithfulness_benchmark.ingestion.aokvqa import SourceRecord
 
@@ -299,14 +300,13 @@ class DeepseekVL2Generator:
             reply = f"{string.ascii_uppercase[i]}."
             prepared = self._prepare(record, pil, reply=reply)
             ids = prepared.input_ids[0]
-            start, end = forced_reply_span(ids_without, ids.tolist())
-            decoded = self._tokenizer.decode(
-                ids[start:end], skip_special_tokens=True
-            ).strip()
-            # Verify by decoding, never by assumption (pilot-v1 defect class).
-            assert decoded == reply, (
-                f"scorer alignment defect: located span decodes to {decoded!r}, "
-                f"expected {reply!r}"
+            ids_list = ids.tolist()
+            start, end = forced_reply_span(ids_without, ids_list)
+            # Refine to the minimal sub-span decoding to the reply (template
+            # scaffold may sit inside the insertion) — halt on ambiguity.
+            start, end = refine_reply_span(
+                ids_list, start, end, reply,
+                lambda span: self._tokenizer.decode(span, skip_special_tokens=True),
             )
             with self._torch.inference_mode():
                 inputs_embeds = self._model.prepare_inputs_embeds(**prepared)

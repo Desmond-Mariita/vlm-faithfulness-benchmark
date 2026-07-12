@@ -18,6 +18,7 @@ from vlm_faithfulness_benchmark.generation import (
 from vlm_faithfulness_benchmark.generation.mc_extraction import (
     extract_mc_outcome,
     forced_reply_span,
+    refine_reply_span,
     strip_think_block,
 )
 
@@ -198,3 +199,41 @@ class TestForcedReplySpan:
         """A span with no predecessor position cannot be scored (F-07)."""
         with pytest.raises(AssertionError, match="predecessor|empty"):
             forced_reply_span([9, 1], [7, 9, 1])
+
+
+class TestRefineReplySpan:
+    """In-insertion scaffold trimming (GLM rehearsal finding 2026-07-12)."""
+
+    # Fake vocabulary: id -> text; simulates '<think></think>\nA.' insertions.
+    VOCAB = {1: "<think>", 2: "</think>", 3: "\n", 4: "A", 5: ".", 6: "B", 7: "x"}
+
+    def _decode(self, span: list[int]) -> str:
+        return "".join(self.VOCAB[i] for i in span)
+
+    def test_scaffold_prefix_is_trimmed(self) -> None:
+        """The empty think scaffold before the reply is excluded."""
+        ids = [7, 1, 2, 3, 4, 5]  # x <think> </think> \n A .
+        assert refine_reply_span(ids, 1, 6, "A.", self._decode) == (4, 6)
+
+    def test_exact_insertion_passes_through(self) -> None:
+        """A scaffold-free insertion refines to itself."""
+        ids = [7, 4, 5]
+        assert refine_reply_span(ids, 1, 3, "A.", self._decode) == (1, 3)
+
+    def test_no_matching_subspan_halts(self) -> None:
+        """An insertion that never decodes to the reply halts."""
+        ids = [7, 6, 5]  # x B .
+        with pytest.raises(AssertionError, match="no sub-span"):
+            refine_reply_span(ids, 1, 3, "A.", self._decode)
+
+    def test_ambiguous_shortest_match_halts(self) -> None:
+        """Two equally short reply decodings are ambiguous — halt."""
+        ids = [7, 4, 5, 3, 4, 5]  # x A . \n A .
+        with pytest.raises(AssertionError, match="ambiguous"):
+            refine_reply_span(ids, 1, 6, "A.", self._decode)
+
+    def test_leading_whitespace_token_is_stripped_for_comparison(self) -> None:
+        r"""A '\nA.' decoding matches 'A.' after strip, minimally without \n."""
+        ids = [7, 3, 4, 5]
+        # both (1,4) '\nA.' and (2,4) 'A.' match after strip; minimal wins.
+        assert refine_reply_span(ids, 1, 4, "A.", self._decode) == (2, 4)

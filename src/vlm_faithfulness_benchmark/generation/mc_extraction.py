@@ -26,6 +26,7 @@ the first rationale marker, stripped; absent/empty ⇒ None.
 from __future__ import annotations
 
 import re
+from typing import Callable
 
 from vlm_faithfulness_benchmark.generation.harness import GenerationOutcome
 
@@ -33,6 +34,7 @@ __all__ = [
     "RATIONALE_MARKER",
     "extract_mc_outcome",
     "forced_reply_span",
+    "refine_reply_span",
     "strip_think_block",
 ]
 
@@ -116,6 +118,59 @@ def forced_reply_span(ids_without: list[int], ids_with: list[int]) -> tuple[int,
         "or lacks a predecessor position"
     )
     return start, end
+
+
+def refine_reply_span(
+    ids: list[int],
+    start: int,
+    end: int,
+    reply: str,
+    decode: "Callable[[list[int]], str]",
+) -> tuple[int, int]:
+    r"""Shrink a diff span to the minimal token run decoding to the reply.
+
+    Chat templates may inject scaffold INSIDE the forced-reply insertion
+    (GLM rehearsal finding 2026-07-12: an empty ``<think></think>\\n`` is
+    rendered before the reply, so the raw diff span decodes to
+    ``"<think></think>\\nA."``). The scored span must be the reply itself:
+    this scans the insertion for the unique shortest sub-span whose decoded,
+    whitespace-stripped text equals the reply, and halts otherwise (the
+    pilot-v1 defect class must halt, never mis-score). The scaffold tokens
+    still condition the reply's probability (they precede its positions),
+    identically across options.
+
+    Args:
+        ids: Full input-id sequence.
+        start: Diff-span start (from :func:`forced_reply_span`).
+        end: Diff-span end (exclusive).
+        reply: The forced reply text.
+        decode: Detokenizer for an id slice (special tokens skipped).
+
+    Returns:
+        ``(start, end)`` of the minimal matching sub-span.
+
+    Raises:
+        AssertionError: If no sub-span decodes to the reply, the shortest
+            match is ambiguous, or the match starts at position 0.
+    """
+    matches: list[tuple[int, int]] = []
+    for s in range(start, end):
+        for e in range(s + 1, end + 1):
+            if decode(ids[s:e]).strip() == reply:
+                matches.append((s, e))
+    assert matches, (
+        f"scorer alignment defect: no sub-span of the insertion decodes to "
+        f"{reply!r} (insertion decodes to {decode(ids[start:end])!r})"
+    )
+    shortest = min(e - s for s, e in matches)
+    minimal = [(s, e) for s, e in matches if e - s == shortest]
+    assert len(minimal) == 1, (
+        f"scorer alignment defect: {len(minimal)} equally short sub-spans "
+        f"decode to {reply!r} — ambiguous"
+    )
+    s, e = minimal[0]
+    assert s > 0, "scorer alignment defect: reply span lacks a predecessor position"
+    return s, e
 
 
 def extract_mc_outcome(text: str, options: tuple[str, ...]) -> GenerationOutcome:

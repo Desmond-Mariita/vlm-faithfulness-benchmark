@@ -204,6 +204,7 @@ def _observe_candidate(
         else None
     )
     row["counterfactual_rationale"] = targeted_out.rationale if targeted_out else None
+    row["counterfactual_answer"] = targeted_out.chosen_answer if targeted_out else None
     row["control_rationale"] = control_out.rationale if control_out else None
     row["coherence"] = coherence_screen(
         rationale, targeted_out.rationale if targeted_out else None, io.registry

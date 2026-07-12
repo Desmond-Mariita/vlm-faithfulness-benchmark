@@ -1,0 +1,13 @@
+{
+  "id": "pool-manifest-v1",
+  "source": "aokvqa v1p0 train+val",
+  "n_records": 18194,
+  "n_ingestion_exclusions": 7,
+  "exclusion_reasons": {
+    "empty option text": 7
+  },
+  "n_missing_images": 0,
+  "order_rule": "identity-sorted by record_id; position in this order keys ALL seed streams, the wrong-image derangement (cyclic successor), and fold parity",
+  "sha256_of_record_id_sequence": "1d1ba93649f02eb0d28b5c3614368c4b6c92bb9cb5d29ca8bab09387875cf12d",
+  "pilot_overlap_note": "records at identity positions previously used by the 500-record pilot and 200-record confirmatory run remain in the pool; their instances are constructed fresh per generator identity; calibration-quarantine (N6.6) applies at split time to every record consumed by any calibration act"
+}

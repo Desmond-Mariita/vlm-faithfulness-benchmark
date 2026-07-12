@@ -1,0 +1,51 @@
+{
+  "id": "prereg-v3",
+  "supersedes": "prereg-v2 k_rule and human-check design only (amendment window: verification fold untouched; humancheck_amendment_package.md, BM approved 2026-07-12); all other prereg-v2 registrations inherit unchanged",
+  "trace": "Committed BEFORE the fresh confirmatory pilot. Grounded in the two-round literature consultation; instrument chosen by prereg-selection-v1's rule on calibration-fold texts only.",
+  "instrument": {
+    "id": "jaccard-content-v1",
+    "definition": "drift = 1 - Jaccard(content words of baseline rationale, content words of counterfactual rationale); content words = lowercased [a-z'] tokens minus the pinned stopword list shipped as config/stopwords_v1.txt",
+    "selected_by": "prereg-selection-v1 rule: AUROC tie (0.8512 vs 0.8556, within 0.01) broken to lowest CC1 risk; paired requirement met (+0.0718)",
+    "cc1": "ruler (zero risk); secondary descriptive instruments recorded but non-gating: bertscore-f1, embed-cosine"
+  },
+  "control_design": "area-matched multi-patch control edits (16px tiles, deterministic grid scan, min coverage 25% of evidence area, coverage ratio recorded)",
+  "estimand": "distribution separation of targeted vs multi-patch-control drift on FRESH records, generator Qwen3-VL-8B-Instruct, A-OKVQA val records disjoint from the 500 pilot records",
+  "gate": {
+    "primary": "one-sided minimum-effect test: reject viability only if the 95% CI lower bound of AUROC(targeted vs control) < 0.71 (SESOI = Vargha-Delaney 'large'); CI by stratified bootstrap (10,000 resamples)",
+    "co_primary_paired": "paired within-record median(targeted - control drift) > 0 with 95% bootstrap CI excluding 0",
+    "operating_point": "theta_B = the empirical 90th percentile of the control-drift distribution on the fresh calibration fold (specificity operating point, quantile RULE not a number)"
+  },
+  "sample": {
+    "n_records": 200,
+    "power_basis": "Hanley-McNeil: n=60/group powers alpha=.05 one-sided, 80%, A1=0.83 vs A0=0.71; n=200 records (~100/fold after parity split, near-complete control coverage via multi-patch) gives margin >2x over the requirement",
+    "fold_rule": "identity-sorted position parity within the fresh sample: even -> calibration, odd -> verification",
+    "one_shot": "the verification fold is consumed EXACTLY ONCE by the gate; no re-analysis after unblinding"
+  },
+  "escalation_options_registered_in_advance": [
+    "PASS both gates -> proceed to k/theta calibration + human verification sheet (M8 continues)",
+    "FAIL primary only -> Charter 6 disposition on the EDIT OPERATIONALIZATION (e.g. inpainting-based counterfactuals); the instrument question is closed and may not be reopened for this failure",
+    "FAIL paired only -> investigate control-coverage stratification confound; one registered re-run permitted with stratified sampling; second failure -> Charter 6 on operationalization",
+    "FAIL both -> Charter 6 disposition; options limited to: re-scope edits, or project re-scope per Charter"
+  ],
+  "k_grid": [
+    2,
+    3
+  ],
+  "k_rule": "smallest k in k_grid with estimated spurious-A-true <= 0.05, where spurious-A-true = Binomial(4, p_noise) tail at k and p_noise = calibration-fold hflip flip rate (negative-control noise floor, design-symmetric with theta_B); measured 2026-07-12: p_noise=0.179 -> k=3 (1.98% vs 14.9% at k=2); registered non-gating sensitivity report at k=2",
+  "saliency_floor_rule": "unchanged from prereg-v1 (10th percentile of calibration-fold max drops)",
+  "min_pilot_sample_per_fold": 60,
+  "registered_descriptives_non_gating": [
+    "answer-flip-stratified drift: report targeted-drift distributions separately for records whose chosen answer flips vs persists under the targeted edit",
+    "evidence-mention-flip: fraction of counterfactual rationales that stop mentioning the top content words of the baseline rationale's evidence-region description",
+    "length-robustness: paired drift recomputed on length-normalized rationales (truncated to min pair length in tokens) to expose verbosity artifacts of the Jaccard instrument",
+    "bertscore-f1 and embed-cosine drifts (comparator instruments)"
+  ],
+  "descriptives_rule": "all descriptives are computed AFTER the gate verdict is recorded and may not alter it; registered here before any fresh data exists",
+  "human_check": {
+    "design": "mechanical audit of recorded facts (NOT construct judgment): 50 calibration-fold cases stratified by flip count; per case verify: (1) original image matches question context, (2) recorded answer+rationale match the sheet, (3) edited image shows the recorded region visibly altered, (4) counterfactual rationale present as recorded, (5) hflip image is a mirror of the original, (6) record internally consistent",
+    "pass_rule": "zero substantive discrepancies (clerical notes allowed)",
+    "readings_verification": "logprob-derived flip/hold facts are machine-verified by exact recomputation from raw runs (already reproduced), not human-verified"
+  },
+  "superseded_artifacts_preserved": "verification_sheet_v1.csv (construct-judgment sheet) + k_calibration_result.json retained as registered descriptive: human question-level image-need expectation vs model behavior",
+  "forking_paths_disclosure": "both candidate-k outcomes were known when the k rule was adopted; the effect-anchor alternative was computed (AUROC 0.913 vs 0.917, tie) and disclosed"
+}

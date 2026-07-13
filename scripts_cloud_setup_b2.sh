@@ -43,7 +43,7 @@ fail()    { echo -e "${RED}xx $1${RESET}"; exit 1; }
 
 # Interrupt trap: the ledgers are the run — push them before dying.
 trap 'echo "interrupt — emergency ledger sync";
-      rclone sync "$RUNS_DIR" "$REMOTE_NAME:$B2_BUCKET/bench_runs_interrupt_$(date +%F_%H-%M)" || true' \
+      rclone copy "$RUNS_DIR" "$REMOTE_NAME:$B2_BUCKET/bench_runs_interrupt_$(date +%F_%H-%M)" || true' \
       SIGINT SIGTERM
 
 mkdir -p "$LOG_DIR"
@@ -152,8 +152,8 @@ fi
 
 # ---- ledger backups: cron every 15 min + change-triggered monitor ----
 mkdir -p "$RUNS_DIR"
-rclone sync "$RUNS_DIR" "$REMOTE_NAME:$B2_BUCKET/bench_runs_auto" --progress || true
-CRON_JOB="*/15 * * * * rclone sync $RUNS_DIR $REMOTE_NAME:$B2_BUCKET/bench_runs_auto >> $CRON_LOG 2>&1"
+rclone copy "$RUNS_DIR" "$REMOTE_NAME:$B2_BUCKET/bench_runs_auto" --progress || true
+CRON_JOB="*/15 * * * * rclone copy $RUNS_DIR $REMOTE_NAME:$B2_BUCKET/bench_runs_auto >> $CRON_LOG 2>&1"
 EXISTING_CRON="$(crontab -l 2>/dev/null || true)"
 if ! echo "$EXISTING_CRON" | grep -Fq "$RUNS_DIR $REMOTE_NAME:$B2_BUCKET/bench_runs_auto"; then
     (echo "$EXISTING_CRON"; echo "$CRON_JOB") | crontab -
@@ -165,7 +165,7 @@ success "cron ledger backup installed (every 15 min)"
     while true; do
         state="$(find "$RUNS_DIR" -type f -name '*.jsonl' -printf '%T@ %s\n' 2>/dev/null | sort | md5sum)"
         if [[ -n "$state" && "$state" != "$last_state" ]]; then
-            rclone sync "$RUNS_DIR" "$REMOTE_NAME:$B2_BUCKET/bench_runs_auto" \
+            rclone copy "$RUNS_DIR" "$REMOTE_NAME:$B2_BUCKET/bench_runs_auto" \
                 --log-file="$MONITOR_LOG" --log-level INFO \
                 || echo "[$(date)] sync failed" >> "$MONITOR_LOG"
             last_state="$state"

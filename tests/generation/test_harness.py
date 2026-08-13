@@ -45,7 +45,7 @@ def test_commits_output_tuple_as_emitted_with_digest(tmp_path: Path) -> None:
     payload = ledger.payload(key)
     assert payload["output_tuple"] == {"chosen_answer": "a", "rationale": "because it is a"}
     assert len(payload["baseline_digest"]) == 64
-    assert payload["rip"] == "RIP-1.0.0"
+    assert payload["rip"] == "RIP-1.2.0"
     ledger.close()
 
 

@@ -64,6 +64,7 @@ __all__ = [
 EXTRACTION_CONTRACT_ID = "aokvqa-mc-dsvl2-v1"
 OPTION_SCORER_ID = "option-letter-logprob-dsvl2-v1"
 _MODEL_ID = "deepseek-ai/deepseek-vl2"
+_REVISION = "f363772d1c47f4239dd844015b4bd53beb87951b"
 _MAX_NEW_TOKENS = 160
 
 
@@ -122,16 +123,22 @@ class DeepseekVL2Generator:
 
         self._torch = torch
         self._image_root = image_root
-        self._processor = DeepseekVLV2Processor.from_pretrained(_MODEL_ID)
+        self._processor = DeepseekVLV2Processor.from_pretrained(
+            _MODEL_ID, revision=_REVISION
+        )
         self._tokenizer = self._processor.tokenizer
         model = DeepseekVLV2ForCausalLM.from_pretrained(
-            _MODEL_ID, trust_remote_code=True, torch_dtype=torch.bfloat16
+            _MODEL_ID,
+            revision=_REVISION,
+            trust_remote_code=True,
+            torch_dtype=torch.bfloat16,
         )
         self._model = model.cuda().eval()
-        revision = getattr(self._model.config, "_commit_hash", None)
-        # R3: halt rather than record an unpinned composite identity.
-        assert revision, "R3: weight revision hash unavailable; refusing unpinned identity"
-        self._revision = str(revision)
+        loaded_revision = getattr(self._model.config, "_commit_hash", None)
+        assert loaded_revision == _REVISION, (
+            f"R3: requested revision {_REVISION} but loaded {loaded_revision!r}"
+        )
+        self._revision = _REVISION
 
     def identity(self) -> GeneratorId:
         """The composite identity naming every component (R3, ADR-005)."""

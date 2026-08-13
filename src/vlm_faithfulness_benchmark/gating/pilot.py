@@ -44,6 +44,7 @@ from vlm_faithfulness_benchmark.gating.saliency import (
     SaliencyGrid,
     localize,
 )
+from vlm_faithfulness_benchmark.generation.digest import verify_baseline_digest
 from vlm_faithfulness_benchmark.generation.harness import GenerationOutcome
 from vlm_faithfulness_benchmark.generation.identity import InstanceId
 from vlm_faithfulness_benchmark.ingestion.aokvqa import SourceRecord
@@ -248,7 +249,17 @@ def run_pilot_observation(
             continue
         tuple_payload = s02["output_tuple"]
         assert isinstance(tuple_payload, Mapping)
+        recorded_digest = s02.get("baseline_digest")
+        assert isinstance(recorded_digest, str), (
+            "DM-Q1: committed S02 payload has no baseline_digest; "
+            "refusing to consume an undesignated baseline"
+        )
+        # DM Q1 Option A: verify the exact baseline before any observation
+        # consumes it. A mismatch is a conformance error, never a route.
+        verify_baseline_digest(tuple_payload, recorded_digest)
         row = _observe_candidate(record, record_index, tuple_payload, io)
+        # Bind the verified baseline into this consumer's own provenance.
+        row["baseline_digest"] = recorded_digest
         ledger.commit(key, row)
         committed += 1
         if on_progress is not None:

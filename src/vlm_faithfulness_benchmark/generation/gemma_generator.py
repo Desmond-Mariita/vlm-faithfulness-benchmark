@@ -85,6 +85,7 @@ __all__ = [
 EXTRACTION_CONTRACT_ID = "aokvqa-mc-gemma-v1"
 OPTION_SCORER_ID = "option-letter-logprob-gemma-v1"
 _MODEL_ID = "google/gemma-4-12B-it"
+_REVISION = "707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7"
 _MAX_NEW_TOKENS = 160
 _RATIONALE_MARKER = "Rationale:"
 # Feature keys an image-carrying batch may use. Encoder-free processors need
@@ -178,12 +179,15 @@ class GemmaGenerator:
         self._image_root = image_root
         # transformers' Auto* factories are untyped upstream; the boundary is
         # confined to these calls (mypy: no-untyped-call/misc).
-        self._processor = AutoProcessor.from_pretrained(_MODEL_ID)  # type: ignore[no-untyped-call]
+        self._processor = AutoProcessor.from_pretrained(  # type: ignore[no-untyped-call]
+            _MODEL_ID, revision=_REVISION
+        )
         # Class pinned to the model card's documented entry point for the
         # encoder-free architecture. With output_loading_info=True
         # from_pretrained returns a 2-tuple; upstream stubs don't model that.
         loaded: Any = AutoModelForMultimodalLM.from_pretrained(
             _MODEL_ID,
+            revision=_REVISION,
             dtype=torch.bfloat16,
             device_map="cuda:0",
             output_loading_info=True,
@@ -208,11 +212,11 @@ class GemmaGenerator:
             "identity would misdescribe the subject"
         )
         self._model.eval()
-        revision = getattr(self._model.config, "_commit_hash", None)
-        # R3: a subject without a pinned weight revision is not a complete
-        # composite identity — halt rather than record "unpinned".
-        assert revision, "R3: weight revision hash unavailable; refusing unpinned identity"
-        self._revision = str(revision)
+        loaded_revision = getattr(self._model.config, "_commit_hash", None)
+        assert loaded_revision == _REVISION, (
+            f"R3: requested revision {_REVISION} but loaded {loaded_revision!r}"
+        )
+        self._revision = _REVISION
 
     def identity(self) -> GeneratorId:
         """The composite identity naming every component (R3, ADR-005).

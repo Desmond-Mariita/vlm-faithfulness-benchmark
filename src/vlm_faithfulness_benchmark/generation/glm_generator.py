@@ -82,6 +82,7 @@ EXTRACTION_CONTRACT_ID = "aokvqa-mc-glm-v2"
 EXTRACTION_CONTRACT_ID_THINKING = "aokvqa-mc-glm-v1"
 OPTION_SCORER_ID = "option-letter-logprob-glm-v1"
 _MODEL_ID = "zai-org/GLM-4.6V-Flash"
+_REVISION = "411bb4d77144a3f03accbf4b780f5acb8b7cde4e"
 # Per-contract token budgets: thinking needs headroom for the think block;
 # no-think replies are short (rehearsal p100 well under 256).
 _MAX_NEW_TOKENS_NOTHINK = 256
@@ -159,7 +160,9 @@ class GlmGenerator:
         )
         # transformers' factories are untyped upstream; the boundary is
         # confined to these calls (mypy: no-untyped-call/misc).
-        self._processor = AutoProcessor.from_pretrained(_MODEL_ID)  # type: ignore[no-untyped-call]
+        self._processor = AutoProcessor.from_pretrained(  # type: ignore[no-untyped-call]
+            _MODEL_ID, revision=_REVISION
+        )
         # Auto class resolves the checkpoint's DECLARED architecture
         # (Glm4vForConditionalGeneration — Flash is DENSE 9B; the MoE class
         # silently fabricated newly-initialized expert weights and OOMed:
@@ -167,7 +170,7 @@ class GlmGenerator:
         # With output_loading_info=True from_pretrained returns a 2-tuple;
         # upstream stubs don't model that — Any confines the boundary.
         loaded: Any = AutoModelForImageTextToText.from_pretrained(
-            _MODEL_ID, dtype=torch.bfloat16, device_map="cuda:0",
+            _MODEL_ID, revision=_REVISION, dtype=torch.bfloat16, device_map="cuda:0",
             output_loading_info=True,
         )
         self._model, loading_info = loaded
@@ -180,11 +183,11 @@ class GlmGenerator:
             f"from the checkpoint would be newly initialized (e.g. {missing[:3]})"
         )
         self._model.eval()
-        revision = getattr(self._model.config, "_commit_hash", None)
-        # R3: a subject without a pinned weight revision is not a complete
-        # composite identity — halt rather than record "unpinned".
-        assert revision, "R3: weight revision hash unavailable; refusing unpinned identity"
-        self._revision = str(revision)
+        loaded_revision = getattr(self._model.config, "_commit_hash", None)
+        assert loaded_revision == _REVISION, (
+            f"R3: requested revision {_REVISION} but loaded {loaded_revision!r}"
+        )
+        self._revision = _REVISION
 
     def identity(self) -> GeneratorId:
         """The composite identity naming every component (R3, ADR-005)."""

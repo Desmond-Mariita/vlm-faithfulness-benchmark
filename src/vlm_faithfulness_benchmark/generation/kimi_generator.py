@@ -64,6 +64,7 @@ __all__ = [
 EXTRACTION_CONTRACT_ID = "aokvqa-mc-kimi-v1"
 OPTION_SCORER_ID = "option-letter-logprob-kimi-v1"
 _MODEL_ID = "moonshotai/Kimi-VL-A3B-Instruct"
+_REVISION = "398eede0903cd983a2bfa0cc634e9ac1d843f375"
 _MAX_NEW_TOKENS = 160
 
 
@@ -134,7 +135,7 @@ class KimiGenerator:
         self._image_root = image_root
         self._quantized = load_in_8bit
         self._processor = AutoProcessor.from_pretrained(  # type: ignore[no-untyped-call]
-            _MODEL_ID, trust_remote_code=True
+            _MODEL_ID, revision=_REVISION, trust_remote_code=True
         )
         # With output_loading_info=True from_pretrained returns a 2-tuple;
         # upstream stubs don't model that — Any confines the boundary.
@@ -144,6 +145,7 @@ class KimiGenerator:
 
             loaded = AutoModelForCausalLM.from_pretrained(
                 _MODEL_ID,
+                revision=_REVISION,
                 trust_remote_code=True,
                 quantization_config=BitsAndBytesConfig(load_in_8bit=True),  # type: ignore[no-untyped-call]
                 device_map="cuda:0",
@@ -152,8 +154,9 @@ class KimiGenerator:
         else:
             loaded = AutoModelForCausalLM.from_pretrained(
                 _MODEL_ID,
+                revision=_REVISION,
                 trust_remote_code=True,
-                dtype=torch.bfloat16,
+                torch_dtype=torch.bfloat16,
                 device_map="cuda:0",
                 output_loading_info=True,
             )
@@ -167,10 +170,11 @@ class KimiGenerator:
             f"from the checkpoint would be newly initialized (e.g. {missing[:3]})"
         )
         self._model.eval()
-        revision = getattr(self._model.config, "_commit_hash", None)
-        # R3: halt rather than record an unpinned composite identity.
-        assert revision, "R3: weight revision hash unavailable; refusing unpinned identity"
-        self._revision = str(revision)
+        loaded_revision = getattr(self._model.config, "_commit_hash", None)
+        assert loaded_revision == _REVISION, (
+            f"R3: requested revision {_REVISION} but loaded {loaded_revision!r}"
+        )
+        self._revision = _REVISION
 
     def identity(self) -> GeneratorId:
         """The composite identity naming every component (R3, ADR-005)."""

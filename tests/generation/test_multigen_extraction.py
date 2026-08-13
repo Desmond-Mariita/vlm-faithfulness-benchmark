@@ -11,6 +11,7 @@ import pytest
 
 from vlm_faithfulness_benchmark.generation import (
     deepseek_generator,
+    gemma_generator,
     glm_generator,
     kimi_generator,
     qwen_generator,
@@ -85,6 +86,7 @@ def test_contract_ids_are_distinct_pins() -> None:
         glm_generator.EXTRACTION_CONTRACT_ID_THINKING,
         deepseek_generator.EXTRACTION_CONTRACT_ID,
         kimi_generator.EXTRACTION_CONTRACT_ID,
+        gemma_generator.EXTRACTION_CONTRACT_ID,
     }
     assert ids == {
         "aokvqa-mc-v1.1",
@@ -92,12 +94,13 @@ def test_contract_ids_are_distinct_pins() -> None:
         "aokvqa-mc-glm-v1",
         "aokvqa-mc-dsvl2-v1",
         "aokvqa-mc-kimi-v1",
+        "aokvqa-mc-gemma-v1",
     }
     assert glm_generator.EXTRACTION_CONTRACT_ID == "aokvqa-mc-glm-v2"
 
 
 def test_prompts_are_generator_invariant() -> None:
-    """All four adapters render the identical prompt for the same record.
+    """All five adapters render the identical prompt for the same record.
 
     Cross-generator label differences must not be attributable to prompt
     drift; the wording is deliberately shared.
@@ -117,6 +120,7 @@ def test_prompts_are_generator_invariant() -> None:
         glm_generator.build_prompt(record),
         deepseek_generator.build_prompt(record),
         kimi_generator.build_prompt(record),
+        gemma_generator.build_prompt(record),
     }
     assert len(prompts) == 1
 
@@ -168,13 +172,58 @@ class TestGlmThinkContract:
 
 
 @pytest.mark.parametrize(
-    "module", [deepseek_generator, kimi_generator], ids=["deepseek", "kimi"]
+    "module",
+    [deepseek_generator, kimi_generator, gemma_generator],
+    ids=["deepseek", "kimi", "gemma"],
 )
 def test_passthrough_contracts_match_shared_core(module: object) -> None:
-    """DeepSeek/Kimi contracts are the shared core with no pre-normalization."""
+    """DeepSeek/Kimi/Gemma contracts are the shared core, no pre-normalization."""
     for text, chosen, rationale in SHARED_CASES:
         outcome = module.extract_outcome(text, OPTIONS)  # type: ignore[attr-defined]
         assert (outcome.chosen_answer, outcome.rationale) == (chosen, rationale)
+
+
+class TestGemmaImageInvariant:
+    """Encoder-free batches must be proven to carry the image (F-04 class).
+
+    Gemma 4 projects raw patches into the embedding space, so there is no
+    vision tower to interrogate: the processed batch is the only evidence
+    that the image reached the model. A text-only batch would generate and
+    score happily while measuring the wrong construct entirely.
+    """
+
+    class _Feat:
+        """Minimal stand-in for a tensor exposing ``numel``."""
+
+        def __init__(self, n: int) -> None:
+            self._n = n
+
+        def numel(self) -> int:
+            """Return the element count."""
+            return self._n
+
+    def test_pixel_values_accepted(self) -> None:
+        """The conventional key satisfies the invariant."""
+        gemma_generator._assert_carries_image({"pixel_values": self._Feat(16)})
+
+    def test_encoder_free_patch_key_accepted(self) -> None:
+        """An encoder-free processor need not emit ``pixel_values``."""
+        gemma_generator._assert_carries_image({"image_patches": self._Feat(4)})
+
+    def test_text_only_batch_halts(self) -> None:
+        """No image feature at all must halt, never silently proceed."""
+        with pytest.raises(AssertionError, match="no image features"):
+            gemma_generator._assert_carries_image({"input_ids": self._Feat(8)})
+
+    def test_present_but_empty_feature_halts(self) -> None:
+        """A present-but-empty feature is a dropped image, not an image."""
+        with pytest.raises(AssertionError, match="is empty"):
+            gemma_generator._assert_carries_image({"pixel_values": self._Feat(0)})
+
+    def test_none_valued_feature_halts(self) -> None:
+        """An explicit None is absence, not presence."""
+        with pytest.raises(AssertionError, match="no image features"):
+            gemma_generator._assert_carries_image({"pixel_values": None})
 
 
 class TestForcedReplySpan:

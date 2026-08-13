@@ -45,7 +45,7 @@ from vlm_faithfulness_benchmark.run_ledger import RunLedger
 
 ROOT = Path(__file__).resolve().parent
 
-GENERATOR_CHOICES = ("qwen", "glm", "glm-thinking", "deepseek", "kimi")
+GENERATOR_CHOICES = ("qwen", "glm", "glm-thinking", "deepseek", "kimi", "gemma")
 
 
 def build_generator(name: str, image_root: Path) -> "object":
@@ -84,6 +84,12 @@ def build_generator(name: str, image_root: Path) -> "object":
         from vlm_faithfulness_benchmark.generation.kimi_generator import KimiGenerator
 
         return KimiGenerator(image_root=image_root)
+    if name == "gemma":
+        # Candidate fourth family (M9). Adapter is cloud-validated-pending:
+        # ~27 GB bf16 cannot load on the 24 GB local card.
+        from vlm_faithfulness_benchmark.generation.gemma_generator import GemmaGenerator
+
+        return GemmaGenerator(image_root=image_root)
     raise ValueError(f"unknown generator {name!r}")
 
 

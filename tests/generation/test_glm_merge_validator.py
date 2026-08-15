@@ -86,7 +86,10 @@ def test_merge_validator_accepts_legacy_sidecar_and_in_row_provenance(tmp_path: 
         json.dumps(
             {
                 "schema": "vlm-faithfulness-legacy-baseline-verification-manifest-v1",
-                "inputs": {"s02": {"sha256": s02_hash}},
+                "inputs": {
+                    "s02": {"sha256": s02_hash},
+                    "obs": {"sha256": file_sha256(legacy)},
+                },
                 "result": {
                     "sha256": file_sha256(sidecar),
                     "verified_legacy_rows": 1,

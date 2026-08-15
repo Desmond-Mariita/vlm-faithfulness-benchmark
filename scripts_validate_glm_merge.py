@@ -327,6 +327,16 @@ def main() -> None:
         )
         s02_by_instance[instance_key] = payload
 
+    legacy_artifacts = [
+        artifact
+        for artifact in plan["observation_artifacts"]
+        if any(segment.get("start") == 0 for segment in artifact.get("segments", []))
+        and any(segment.get("end", 0) >= M9_LEGACY_END for segment in artifact.get("segments", []))
+    ]
+    _require(
+        len(legacy_artifacts) == 1, "legacy population does not resolve to one observation artifact"
+    )
+    legacy_obs_sha256 = legacy_artifacts[0]["sha256"]
     legacy_digest: dict[str, str] = {}
     legacy_positions: set[int] = set()
     for reference in plan.get("legacy_digest_sidecars", []):
@@ -347,6 +357,11 @@ def main() -> None:
             verification_manifest.get("inputs", {}).get("s02", {}).get("sha256")
             == M9_CANONICAL_S02_SHA256,
             "legacy verification manifest binds wrong S02",
+        )
+        _require(
+            verification_manifest.get("inputs", {}).get("obs", {}).get("sha256")
+            == legacy_obs_sha256,
+            "legacy verification manifest binds wrong observation ledger",
         )
         _require(
             verification_manifest.get("result", {}).get("sha256") == reference["sha256"],

@@ -109,6 +109,25 @@ def test_merge_validator_accepts_legacy_sidecar_and_in_row_provenance(tmp_path: 
         json.dumps(
             {
                 "schema": "vlm-faithfulness-reconstructed-run-provenance-v1",
+                "status": "accepted-for-merge",
+                "acceptance": {
+                    "reviewed_by": "fixture-reviewer",
+                    "reviewed_at_utc": "2026-08-15T00:00:00Z",
+                },
+                "artifact": {
+                    "rows": 1,
+                    "bytes": legacy.stat().st_size,
+                    "sha256": file_sha256(legacy),
+                },
+                "observation_artifacts": [
+                    {
+                        "start": 0,
+                        "end": 1,
+                        "rows": 1,
+                        "bytes": legacy.stat().st_size,
+                        "sha256": file_sha256(legacy),
+                    }
+                ],
                 "segments": [
                     {
                         "start": 0,
@@ -132,7 +151,11 @@ def test_merge_validator_accepts_legacy_sidecar_and_in_row_provenance(tmp_path: 
                     "gpu_name": "NVIDIA GeForce RTX 3090",
                     "compute_capability": "8.6",
                 },
-                "evidence": {"canonical_s02_sha256": s02_hash},
+                "evidence": {
+                    "canonical_s02_sha256": s02_hash,
+                    "unbounded_run_log_sha256": "u",
+                    "bounded_run_log_sha256": "b",
+                },
                 "deterministic_scope": {"on_stack": True, "cross_stack": False},
             }
         )
@@ -272,6 +295,12 @@ def test_merge_validator_accepts_legacy_sidecar_and_in_row_provenance(tmp_path: 
         "m.M9_EXPECTED_RECORDS=2; m.M9_CANONICAL_S02_SHA256=sys.argv.pop(1); "
         "m.M9_GLM_IDENTITY=sys.argv.pop(1); m.M9_LEGACY_END=1; "
         "m.M9_SEGMENTS=[(0,1),(1,2)]; "
+        "m.M9_EXTERNAL_SEGMENT_PINS={(0,1):{'benchmark_commit':'old',"
+        "'driver_sha256':'d'*64,'git_src_tree':'tree'}}; "
+        f"m.M9_LOCAL_ARTIFACT={{'rows':1,'bytes':{legacy.stat().st_size},"
+        f"'sha256':'{file_sha256(legacy)}'}}; "
+        "m.M9_LOCAL_EVIDENCE={'unbounded_run_log_sha256':'u',"
+        "'bounded_run_log_sha256':'b'}; "
         f"m.M9_5090_ENVIRONMENT_FINGERPRINT='{environment_fingerprint}'; "
         "m.M9_IMAGE_ROOT_TREE_SHA256='a'; m.main()"
     )
@@ -294,3 +323,41 @@ def test_merge_validator_accepts_legacy_sidecar_and_in_row_provenance(tmp_path: 
     )
     assert len(merged.read_text().splitlines()) == 2
     assert json.loads(report.read_text())["status"] == "PASS"
+
+    def rejected_environment(mutator: object, expected_message: str) -> None:
+        environment_payload = json.loads(environment.read_text())
+        assert callable(mutator)
+        mutator(environment_payload)
+        environment.write_text(json.dumps(environment_payload) + "\n")
+        plan["observation_artifacts"][0]["segments"][0]["provenance"]["manifest"][
+            "sha256"
+        ] = file_sha256(environment)
+        plan_path.write_text(json.dumps(plan, indent=2) + "\n")
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                bootstrap,
+                s02_hash,
+                identity_key,
+                "--plan",
+                str(plan_path),
+            ],
+            cwd=root,
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode != 0
+        assert expected_message in result.stderr
+
+    rejected_environment(
+        lambda payload: payload.update({"status": "draft-pending-recapture"}),
+        "not accepted for merge",
+    )
+    rejected_environment(
+        lambda payload: (
+            payload.update({"status": "accepted-for-merge"}),
+            payload["segments"][0].update({"benchmark_commit": "wrong"}),
+        ),
+        "wrong benchmark_commit",
+    )

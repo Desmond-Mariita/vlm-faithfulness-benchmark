@@ -251,6 +251,12 @@ def main() -> None:
     ap.add_argument("--shard-end", type=int)
     ap.add_argument("--image-root", type=Path, default=ROOT / "data/coco-pool")
     ap.add_argument(
+        "--run-dir",
+        type=Path,
+        default=ROOT / "data/runs",
+        help="ledger/log directory (use a fresh directory for each acceptance repeat)",
+    )
+    ap.add_argument(
         "--gate-artifact",
         type=Path,
         help="gate JSON path; use a fresh environment-bound artifact for new mass runs",
@@ -267,7 +273,7 @@ def main() -> None:
     ap.add_argument(
         "--launch-contract",
         type=Path,
-        help="reviewed M9 tail contract required for every new GLM tail shard",
+        help="reviewed M9 tail or acceptance contract required for every GPU shard",
     )
     ap.add_argument(
         "--run-gate",
@@ -281,7 +287,7 @@ def main() -> None:
     pool = load_registered_pool(ROOT / "config/pool_manifest_v1.json")
     n_pool = len(pool)
     position = {rec.identity.record_id: i for i, rec in enumerate(pool)}
-    run_dir = ROOT / "data/runs"
+    run_dir = args.run_dir
     run_dir.mkdir(parents=True, exist_ok=True)
     gate_path = args.gate_artifact or run_dir / f"gate-{args.generator}.json"
 

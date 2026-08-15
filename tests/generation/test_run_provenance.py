@@ -153,6 +153,94 @@ def _project(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
     return root, gate, s02, images
 
 
+def test_acceptance_contract_allows_registered_3090_probe(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The generic manifest path supports a pinned 3090 CAL-50 leg, not just the tail."""
+    root, gate, s02, images = _project(tmp_path)
+    (root / "config/pool_manifest_v1.json").write_text("pool\n")
+    (root / "config/prereg_m9_v1.json").write_text("prereg\n")
+    runtime: dict[str, object] = {
+        "platform": "linux",
+        "python": "3.10",
+        "numpy": "2",
+        "pillow": "12",
+        "torch": "2",
+        "torch_cuda": "13",
+        "cudnn": 92000,
+        "transformers": "5",
+        "gpu": {
+            "name": "NVIDIA GeForce RTX 3090",
+            "compute_capability": "8.6",
+            "driver": "580",
+        },
+    }
+    environment = run_provenance.gate_environment_fingerprint(runtime)
+    gate.write_text(
+        json.dumps(
+            {
+                "passed": True,
+                "identity": "identity",
+                "environment_fingerprint": environment,
+            }
+        )
+    )
+    monkeypatch.setattr(run_provenance, "M9_GLM_IDENTITY", "identity")
+    monkeypatch.setattr(run_provenance, "M9_S02_SHA256", run_provenance.file_sha256(s02))
+    monkeypatch.setattr(
+        run_provenance,
+        "M9_POOL_MANIFEST_SHA256",
+        run_provenance.file_sha256(root / "config/pool_manifest_v1.json"),
+    )
+    monkeypatch.setattr(
+        run_provenance,
+        "M9_PREREG_SHA256",
+        run_provenance.file_sha256(root / "config/prereg_m9_v1.json"),
+    )
+    monkeypatch.setattr(
+        run_provenance, "M9_IMAGE_ROOT_TREE_SHA256", run_provenance.tree_sha256(images)
+    )
+    monkeypatch.setattr(run_provenance, "capture_runtime", lambda: runtime)
+    monkeypatch.setattr(run_provenance, "verify_reviewed_git_content", lambda *args: None)
+    contract_payload = {
+        "schema": run_provenance.ACCEPTANCE_CONTRACT_SCHEMA,
+        "profile": "m9-glm-repro-acceptance-v1",
+        "acceptance_leg": "3090-a",
+        "authorized_shards": run_provenance.M9_ACCEPTANCE_RANGES,
+        "cal50_sha256": run_provenance.M9_CAL50_SHA256,
+        "generator": "glm",
+        "generator_identity": "identity",
+        "code_commit": "reviewed-commit",
+        "canonical_s02_sha256": run_provenance.M9_S02_SHA256,
+        "pool_manifest_sha256": run_provenance.M9_POOL_MANIFEST_SHA256,
+        "prereg_sha256": run_provenance.M9_PREREG_SHA256,
+        "environment_fingerprint": environment,
+        "runtime_class": {"gpu_name": "NVIDIA GeForce RTX 3090"},
+        "driver_sha256": run_provenance.file_sha256(root / "scripts_run_shard.py"),
+        "source_tree_sha256": run_provenance.tree_sha256(root / "src"),
+        "config_tree_sha256": run_provenance.tree_sha256(root / "config"),
+        "aokvqa_tree_sha256": run_provenance.tree_sha256(root / "data/aokvqa"),
+        "gate_sha256": run_provenance.file_sha256(gate),
+        "s02_ledger_sha256": run_provenance.file_sha256(s02),
+        "image_root_tree_sha256": run_provenance.tree_sha256(images),
+    }
+    contract = tmp_path / "acceptance-contract.json"
+    contract.write_text(json.dumps(contract_payload))
+    _, digest = run_provenance.load_and_verify_tail_contract(
+        contract,
+        project_root=root,
+        generator="glm",
+        shard_start=2000,
+        shard_end=2050,
+        generator_identity="identity",
+        code_commit="reviewed-commit",
+        gate_path=gate,
+        s02_path=s02,
+        image_root=images,
+    )
+    assert digest == run_provenance.file_sha256(contract)
+
+
 def _manifest(
     root: Path,
     gate: Path,

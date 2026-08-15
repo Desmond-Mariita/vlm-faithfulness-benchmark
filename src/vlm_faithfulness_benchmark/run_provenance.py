@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 __all__ = [
+    "ACCEPTANCE_CONTRACT_SCHEMA",
     "MANIFEST_SCHEMA",
     "TAIL_CONTRACT_SCHEMA",
     "capture_runtime",
@@ -31,10 +32,14 @@ __all__ = [
 
 MANIFEST_SCHEMA = "vlm-faithfulness-run-provenance-v1"
 TAIL_CONTRACT_SCHEMA = "vlm-faithfulness-m9-glm-tail-contract-v1"
+ACCEPTANCE_CONTRACT_SCHEMA = "vlm-faithfulness-m9-glm-acceptance-contract-v1"
 M9_TAIL_RANGES = [[6154, 7577], [7577, 9000]]
+M9_ACCEPTANCE_RANGES = [[2000, 2050]]
+M9_ACCEPTANCE_LEGS = {"5090-a", "5090-b", "3090-a", "3090-b"}
 M9_S02_SHA256 = "e2f35a869cc874504c4942f30804048ac40de59caaafe8f2c7528262b066408e"
 M9_POOL_MANIFEST_SHA256 = "3f34d868d859fa99404c0dcd8a4a1e3b24f84a7cd6420b25893af2133bc8e926"
 M9_PREREG_SHA256 = "a4e04011e22990c2d540c8e7b935c7ee0036b66925b0f1856a2683507a4a65dc"
+M9_CAL50_SHA256 = "c0c104f237bf1e24539a2fd2a0a491f3da79ba0d17d6fe5a2d70423729bdcc46"
 M9_IMAGE_ROOT_TREE_SHA256 = "035b7165c6e4892c2df61f0b4bdb8eafa22d1d2a590d8ce1c2de4ed062362a84"
 M9_5090_ENVIRONMENT_FINGERPRINT = "a2836dd9bd44cbb5e211008eb9a97125d7f6d71cbe2e7dd4edb943197317b539"
 M9_GLM_IDENTITY = (
@@ -192,6 +197,7 @@ def verify_reviewed_git_content(project_root: Path, code_commit: str) -> None:
     scope = [
         "scripts_run_shard.py",
         "scripts_capture_run_manifest.py",
+        "scripts_create_acceptance_contract.py",
         "scripts_create_tail_launch_contract.py",
         "scripts_validate_glm_merge.py",
         "scripts_verify_legacy_digests.py",
@@ -234,14 +240,51 @@ def load_and_verify_tail_contract(
     s02_path: Path,
     image_root: Path,
 ) -> tuple[Mapping[str, Any], str]:
-    """Validate a launch contract against immutable M9 policy and live bytes."""
+    """Validate a tail or acceptance contract against immutable M9 policy and live bytes.
+
+    The public name is retained for compatibility with the reviewed tail launcher. The
+    contract profile determines whether this is a publication tail shard or one of the
+    four pre-registered reproducibility-probe legs.
+    """
     raw = path.read_bytes()
     contract = json.loads(raw)
     _require(isinstance(contract, Mapping), "tail launch contract must be an object")
-    _require_equal(contract.get("schema"), TAIL_CONTRACT_SCHEMA, "contract.schema")
-    _require_equal(contract.get("profile"), "m9-glm-tail-v1", "contract.profile")
-    _require_equal(contract.get("authorized_shards"), M9_TAIL_RANGES, "authorized shards")
-    _require([shard_start, shard_end] in M9_TAIL_RANGES, "shard is not an authorized tail range")
+    profile = contract.get("profile")
+    if profile == "m9-glm-tail-v1":
+        _require_equal(contract.get("schema"), TAIL_CONTRACT_SCHEMA, "contract.schema")
+        _require_equal(contract.get("authorized_shards"), M9_TAIL_RANGES, "authorized shards")
+        _require(
+            [shard_start, shard_end] in M9_TAIL_RANGES,
+            "shard is not an authorized tail range",
+        )
+        expected_environment = M9_5090_ENVIRONMENT_FINGERPRINT
+        environment_label = "approved 5090 environment"
+    elif profile == "m9-glm-repro-acceptance-v1":
+        _require_equal(contract.get("schema"), ACCEPTANCE_CONTRACT_SCHEMA, "contract.schema")
+        _require_equal(
+            contract.get("authorized_shards"), M9_ACCEPTANCE_RANGES, "authorized shards"
+        )
+        _require(
+            [shard_start, shard_end] in M9_ACCEPTANCE_RANGES,
+            "shard is not the registered CAL-50 acceptance range",
+        )
+        leg = contract.get("acceptance_leg")
+        _require(leg in M9_ACCEPTANCE_LEGS, "contract has an invalid acceptance leg")
+        _require_equal(contract.get("cal50_sha256"), M9_CAL50_SHA256, "registered CAL-50")
+        expected_environment = contract.get("environment_fingerprint")
+        _require(
+            isinstance(expected_environment, str) and bool(expected_environment),
+            "acceptance contract has no environment fingerprint",
+        )
+        environment_label = "acceptance environment"
+        runtime_class = contract.get("runtime_class")
+        _require(isinstance(runtime_class, Mapping), "acceptance contract has no runtime class")
+        expected_gpu = (
+            "NVIDIA GeForce RTX 5090" if str(leg).startswith("5090-") else "NVIDIA GeForce RTX 3090"
+        )
+        _require_equal(runtime_class.get("gpu_name"), expected_gpu, "acceptance GPU class")
+    else:
+        raise RuntimeError(f"unknown launch contract profile: {profile!r}")
     _require_equal(contract.get("generator"), generator, "contract.generator")
     _require_equal(generator, "glm", "authorized generator")
     _require_equal(generator_identity, M9_GLM_IDENTITY, "registered GLM identity")
@@ -255,19 +298,15 @@ def load_and_verify_tail_contract(
     )
     _require_equal(contract.get("prereg_sha256"), M9_PREREG_SHA256, "registered prereg")
     _require_equal(
-        contract.get("environment_fingerprint"),
-        M9_5090_ENVIRONMENT_FINGERPRINT,
-        "approved 5090 environment",
+        contract.get("environment_fingerprint"), expected_environment, environment_label
     )
     verify_reviewed_git_content(project_root, code_commit)
     gate = json.loads(gate_path.read_text())
     _require_equal(gate.get("identity"), generator_identity, "gate identity")
     _require(gate.get("passed") is True, "contract gate did not pass")
-    _require_equal(
-        gate.get("environment_fingerprint"),
-        M9_5090_ENVIRONMENT_FINGERPRINT,
-        "gate environment",
-    )
+    live_environment = gate_environment_fingerprint()
+    _require_equal(gate.get("environment_fingerprint"), expected_environment, "gate environment")
+    _require_equal(live_environment, expected_environment, "live environment")
     live = {
         "driver_sha256": file_sha256(project_root / "scripts_run_shard.py"),
         "source_tree_sha256": tree_sha256(project_root / "src"),

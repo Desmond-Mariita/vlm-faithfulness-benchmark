@@ -44,6 +44,65 @@ M9_SEGMENTS = [
     (9000, 13600),
     (13600, 18194),
 ]
+M9_EXTERNAL_SEGMENT_PINS: dict[tuple[int, int], dict[str, object]] = {
+    (0, 3969): {
+        "benchmark_commit": "ef488a984edc6a1eeb374e313e8ecb11a01f2ae3",
+        "git_src_tree": "3d283573a33edcc2cfe04e9c82dc9b1b5ee8f063",
+        "driver_sha256": "8d967987bf3a4d4834a6e174a8ecc1acf0364a317e5c5a69e712177d40c29879",
+    },
+    (3969, 4053): {
+        "benchmark_commit": "3e4e7c714066dd0fe66b8b36017fea6dd748d13f",
+        "git_src_tree": "19deed68b835b366deae11c172cfb3dcbf3e6a96",
+        "driver_sha256": "3ac6c7484afc7d105c8b1014087d83d9f3c060984780c4b21adf6d6a03b67409",
+    },
+    (4053, 6154): {
+        "benchmark_commit": "19b6f94215a499d7eea5a208232083a14ec2b0e6",
+        "git_src_tree": "7b487aaf5aeb3704bb8a881f738d77437d2e26ed",
+        "driver_sha256": "3ac6c7484afc7d105c8b1014087d83d9f3c060984780c4b21adf6d6a03b67409",
+    },
+    (9000, 13600): {
+        "physical_gpu_index": 1,
+        "gpu_uuid": "GPU-a4000756-4629-af45-8ccf-efcbe8d1f507",
+        "gpu_name": "NVIDIA GeForce RTX 5090",
+        "compute_capability": "12.0",
+        "launch_pid": 10861,
+    },
+    (13600, 18194): {
+        "physical_gpu_index": 0,
+        "gpu_uuid": "GPU-da294a97-d1be-be67-7c37-6bdb143b4c47",
+        "gpu_name": "NVIDIA GeForce RTX 5090",
+        "compute_capability": "12.0",
+        "launch_pid": 10958,
+    },
+}
+M9_LOCAL_ARTIFACT = {
+    "rows": 6154,
+    "bytes": 11_727_813,
+    "sha256": "18dc732b89546945eb2b90726f5af07ceb351c5975f4e766e6c28e644dc28351",
+}
+M9_LOCAL_EVIDENCE = {
+    "unbounded_run_log_sha256": "9afab03e56ff32fd719abfbea99d227dbe1aa8380ae18e9536dcb246896c375c",
+    "bounded_run_log_sha256": "b1405827fee3ad9723851af2de485adcf67aa67a1256edf9c46fdbfc7bd635b3",
+}
+M9_CLOUD_RUN_ID = "20260813T080622Z_46118"
+M9_CLOUD_CONTENT_PINS = {
+    "source_tree_sha256_launch_algorithm": (
+        "1ea15f3ac08d92ef60043e7f34e207d2b2c9bbf6e4d3fd2e1397aaee52f50cae"
+    ),
+    "driver_sha256": "3ac6c7484afc7d105c8b1014087d83d9f3c060984780c4b21adf6d6a03b67409",
+    "config_tree_sha256_launch_algorithm": (
+        "ac6e405dde37c653d9297170c3aa07ac4f1fbd1b98bee9d9bb4e5015bb10defc"
+    ),
+    "aokvqa_tree_sha256_launch_algorithm": (
+        "dc4e7d2ad05af5b8572380531d890f3cf81836323daa754c34be0ad6295d46d8"
+    ),
+    "canonical_s02_sha256": M9_CANONICAL_S02_SHA256,
+    "gate_sha256": "0251476ab9ae13af7dbc2fe6b2a99e3040dfd7a15e4e1cc237e38251e61706f3",
+}
+M9_CLOUD_EVIDENCE = {
+    "reviewed_launcher_commit": "c95ca8b",
+    "launcher_sha256": "14410f3199ebe9a558cf5c5c72a3e8f771d1bd541aaaf36f714c8edf5d9db32d",
+}
 
 
 def _require(condition: bool, message: str) -> None:
@@ -95,6 +154,8 @@ def _verify_provenance_manifest(
     start: int,
     end: int,
     expected_identity: str,
+    observation_path: Path,
+    observation_sha256: str,
 ) -> None:
     manifest_path = _verify_file_ref(plan_path, provenance["manifest"])
     manifest = json.loads(manifest_path.read_text())
@@ -205,6 +266,22 @@ def _verify_provenance_manifest(
             manifest.get("schema") == "vlm-faithfulness-reconstructed-run-provenance-v1",
             "bad reconstructed provenance schema",
         )
+        _require(
+            manifest.get("status") == "accepted-for-merge",
+            f"external provenance is not accepted for merge: {manifest_path}",
+        )
+        acceptance = manifest.get("acceptance")
+        _require(isinstance(acceptance, dict), "external provenance has no acceptance record")
+        _require(
+            isinstance(acceptance.get("reviewed_by"), str)
+            and bool(acceptance.get("reviewed_by")),
+            "external provenance has no reviewer",
+        )
+        _require(
+            isinstance(acceptance.get("reviewed_at_utc"), str)
+            and bool(acceptance.get("reviewed_at_utc")),
+            "external provenance has no review timestamp",
+        )
         segments = manifest.get("segments")
         _require(isinstance(segments, list), f"external manifest has no segments: {manifest_path}")
         matches = [s for s in segments if s.get("start") == start and s.get("end") == end]
@@ -217,16 +294,42 @@ def _verify_provenance_manifest(
             isinstance(generator, dict) and generator.get("identity") == expected_identity,
             "external provenance identity mismatch",
         )
-        top_level_pins = manifest.get("installed_content_hashes")
         segment_pins = matches[0]
+        expected_segment_pins = M9_EXTERNAL_SEGMENT_PINS.get((start, end))
         _require(
-            isinstance(top_level_pins, dict)
-            or (
-                isinstance(segment_pins.get("benchmark_commit"), str)
-                and isinstance(segment_pins.get("driver_sha256"), str)
-                and isinstance(segment_pins.get("git_src_tree"), str)
-            ),
-            f"external provenance has no code-content pins for [{start},{end})",
+            isinstance(expected_segment_pins, dict),
+            f"no registered external provenance pins for [{start},{end})",
+        )
+        for field, expected in expected_segment_pins.items():
+            _require(
+                segment_pins.get(field) == expected,
+                f"external provenance has wrong {field} for [{start},{end})",
+            )
+        artifact_bindings = manifest.get("observation_artifacts")
+        _require(
+            isinstance(artifact_bindings, list),
+            "external provenance has no observation-artifact bindings",
+        )
+        matching_artifacts = [
+            binding
+            for binding in artifact_bindings
+            if isinstance(binding, dict)
+            and binding.get("start", -1) <= start
+            and binding.get("end", -1) >= end
+            and binding.get("sha256") == observation_sha256
+        ]
+        _require(
+            len(matching_artifacts) == 1,
+            f"external provenance does not uniquely bind observation bytes for [{start},{end})",
+        )
+        artifact_binding = matching_artifacts[0]
+        _require(
+            artifact_binding.get("bytes") == observation_path.stat().st_size,
+            "external provenance observation byte count mismatch",
+        )
+        _require(
+            artifact_binding.get("rows") == len(_read_jsonl(observation_path)),
+            "external provenance observation row count mismatch",
         )
         host = manifest.get("host")
         _require(isinstance(host, dict), "external provenance has no host object")
@@ -243,6 +346,20 @@ def _verify_provenance_manifest(
         ):
             _require(host.get(field) not in (None, ""), f"external host lacks {field}")
         if start >= 9000:
+            _require(manifest.get("run_id") == M9_CLOUD_RUN_ID, "wrong cloud run id")
+            top_level_pins = manifest.get("installed_content_hashes")
+            _require(
+                isinstance(top_level_pins, dict), "cloud provenance has no content pins"
+            )
+            for field, expected in M9_CLOUD_CONTENT_PINS.items():
+                _require(
+                    top_level_pins.get(field) == expected,
+                    f"cloud provenance has wrong {field}",
+                )
+            evidence = manifest.get("evidence")
+            _require(isinstance(evidence, dict), "cloud provenance has no launch evidence")
+            for field, expected in M9_CLOUD_EVIDENCE.items():
+                _require(evidence.get(field) == expected, f"cloud provenance has wrong {field}")
             environment = dict(host)
             environment["gpu"] = {
                 "name": matches[0].get("gpu_name"),
@@ -256,6 +373,15 @@ def _verify_provenance_manifest(
         else:
             _require(host.get("gpu_name") == "NVIDIA GeForce RTX 3090", "wrong local GPU")
             _require(host.get("compute_capability") == "8.6", "wrong local GPU capability")
+            artifact = manifest.get("artifact")
+            _require(isinstance(artifact, dict), "local provenance has no artifact pin")
+            for field, expected in M9_LOCAL_ARTIFACT.items():
+                _require(artifact.get(field) == expected, f"local provenance has wrong {field}")
+            evidence = manifest.get("evidence")
+            _require(isinstance(evidence, dict), "local provenance has no evidence object")
+            for field, expected in M9_LOCAL_EVIDENCE.items():
+                _require(evidence.get(field) == expected, f"local provenance has wrong {field}")
+        top_level_pins = manifest.get("installed_content_hashes")
         canonical_hash = None
         if isinstance(top_level_pins, dict):
             canonical_hash = top_level_pins.get("canonical_s02_sha256")
@@ -431,7 +557,15 @@ def main() -> None:
                     provenance["mode"] == "in-row",
                     ("new GLM tail segments require in-row run provenance"),
                 )
-            _verify_provenance_manifest(args.plan, provenance, start, end, expected_identity)
+            _verify_provenance_manifest(
+                args.plan,
+                provenance,
+                start,
+                end,
+                expected_identity,
+                obs_path,
+                artifact["sha256"],
+            )
             if provenance["mode"] == "in-row":
                 _require(isinstance(provenance["run_id"], str), "missing run_id")
                 _require(

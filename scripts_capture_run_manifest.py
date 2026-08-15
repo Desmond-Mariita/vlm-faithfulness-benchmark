@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Capture an immutable, fail-closed environment manifest for one mass-run shard."""
+"""Capture an immutable, fail-closed environment manifest for one GPU run."""
 
 from __future__ import annotations
 
@@ -56,8 +56,14 @@ def main() -> None:
     parser.add_argument("--s02", type=Path, required=True)
     parser.add_argument("--image-root", type=Path, required=True)
     parser.add_argument("--launch-contract", type=Path, required=True)
+    parser.add_argument(
+        "--run-dir",
+        type=Path,
+        help="isolated ledger directory; defaults to the parent of --s02",
+    )
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
+    run_dir = args.run_dir or args.s02.parent
     _require(0 <= args.shard_start < args.shard_end, "bad shard bounds")
     _require(not args.output.exists(), f"refusing to overwrite run manifest {args.output}")
 
@@ -108,6 +114,8 @@ def main() -> None:
                 str(args.gate.resolve()),
                 "--launch-contract",
                 str(args.launch_contract.resolve()),
+                "--run-dir",
+                str(run_dir.resolve()),
             ],
         },
         "runtime": capture_runtime(),

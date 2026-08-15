@@ -13,7 +13,11 @@ from typing import Any
 from vlm_faithfulness_benchmark.generation.digest import baseline_digest
 from vlm_faithfulness_benchmark.run_provenance import (
     M9_5090_ENVIRONMENT_FINGERPRINT,
+    M9_IMAGE_ROOT_TREE_SHA256,
+    M9_POOL_MANIFEST_SHA256,
+    M9_PREREG_SHA256,
     MANIFEST_SCHEMA,
+    TAIL_CONTRACT_SCHEMA,
     file_sha256,
     gate_environment_fingerprint,
 )
@@ -129,6 +133,71 @@ def _verify_provenance_manifest(
             _require(
                 isinstance(artifacts.get(required_pin), str),
                 f"run manifest lacks {required_pin}",
+            )
+        _require(
+            artifacts.get("s02_ledger_sha256") == M9_CANONICAL_S02_SHA256,
+            "run manifest binds the wrong S02",
+        )
+        _require(
+            artifacts.get("image_root_tree_sha256") == M9_IMAGE_ROOT_TREE_SHA256,
+            "run manifest binds the wrong image root",
+        )
+        runtime = manifest.get("runtime")
+        _require(isinstance(runtime, dict), "run manifest has no runtime object")
+        _require(
+            gate_environment_fingerprint(runtime) == M9_5090_ENVIRONMENT_FINGERPRINT,
+            "run manifest is not the registered 5090 environment",
+        )
+        contract_path = _verify_file_ref(plan_path, provenance["launch_contract"])
+        contract = json.loads(contract_path.read_text())
+        _require(isinstance(contract, dict), "tail launch contract is not an object")
+        _require(contract.get("schema") == TAIL_CONTRACT_SCHEMA, "bad tail contract schema")
+        _require(
+            provenance["launch_contract"]["sha256"]
+            == manifest.get("launch_contract", {}).get("sha256"),
+            "run manifest does not bind the supplied tail contract",
+        )
+        _require(
+            contract.get("authorized_shards") == [[6154, 7577], [7577, 9000]],
+            "tail contract has wrong authorized ranges",
+        )
+        _require(
+            contract.get("generator_identity") == expected_identity, "contract identity mismatch"
+        )
+        _require(
+            contract.get("canonical_s02_sha256") == M9_CANONICAL_S02_SHA256,
+            "tail contract binds wrong S02",
+        )
+        _require(
+            contract.get("pool_manifest_sha256") == M9_POOL_MANIFEST_SHA256,
+            "tail contract binds wrong pool manifest",
+        )
+        _require(
+            contract.get("prereg_sha256") == M9_PREREG_SHA256,
+            "tail contract binds wrong preregistration",
+        )
+        _require(
+            contract.get("environment_fingerprint") == M9_5090_ENVIRONMENT_FINGERPRINT,
+            "tail contract binds wrong environment",
+        )
+        code = manifest.get("code")
+        _require(isinstance(code, dict), "run manifest has no code object")
+        _require(
+            contract.get("code_commit") == code.get("declared_commit"),
+            "tail contract/run manifest code mismatch",
+        )
+        for field in (
+            "driver_sha256",
+            "source_tree_sha256",
+            "config_tree_sha256",
+            "aokvqa_tree_sha256",
+            "gate_sha256",
+            "s02_ledger_sha256",
+            "image_root_tree_sha256",
+        ):
+            _require(
+                contract.get(field) == artifacts.get(field),
+                f"tail contract/run manifest {field} mismatch",
             )
     else:
         _require(provenance["mode"] == "external", "unknown provenance mode")
@@ -262,6 +331,38 @@ def main() -> None:
     legacy_positions: set[int] = set()
     for reference in plan.get("legacy_digest_sidecars", []):
         path = _verify_file_ref(args.plan, reference)
+        manifest_reference = reference.get("verification_manifest")
+        _require(
+            isinstance(manifest_reference, dict),
+            "legacy sidecar has no deterministic verification manifest",
+        )
+        verification_manifest_path = _verify_file_ref(args.plan, manifest_reference)
+        verification_manifest = json.loads(verification_manifest_path.read_text())
+        _require(
+            verification_manifest.get("schema")
+            == "vlm-faithfulness-legacy-baseline-verification-manifest-v1",
+            "bad legacy verification manifest schema",
+        )
+        _require(
+            verification_manifest.get("inputs", {}).get("s02", {}).get("sha256")
+            == M9_CANONICAL_S02_SHA256,
+            "legacy verification manifest binds wrong S02",
+        )
+        _require(
+            verification_manifest.get("result", {}).get("sha256") == reference["sha256"],
+            "legacy verification manifest does not bind the supplied sidecar",
+        )
+        _require(
+            verification_manifest.get("result", {}).get("verified_legacy_rows") == M9_LEGACY_END,
+            "legacy verification manifest has wrong population",
+        )
+        claim = verification_manifest.get("claim_boundary")
+        _require(isinstance(claim, dict), "legacy verification manifest has no claim boundary")
+        _require(
+            claim.get("observation_ledger_modified") is False
+            and "historical observation consumer" in claim.get("does_not_prove", ""),
+            "legacy verification manifest overclaims historical DM-Q1",
+        )
         for _, row in _read_jsonl(path):
             instance_key = row["instance_key"]
             _require(row.get("schema") == SIDECAR_SCHEMA, "bad legacy sidecar schema")

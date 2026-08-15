@@ -7,6 +7,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from vlm_faithfulness_benchmark import run_provenance
 from vlm_faithfulness_benchmark.generation.digest import baseline_digest
 from vlm_faithfulness_benchmark.run_provenance import file_sha256
 
@@ -73,6 +74,7 @@ def test_merge_validator_accepts_legacy_sidecar_and_in_row_provenance(tmp_path: 
     legacy = tmp_path / "legacy.jsonl"
     new = tmp_path / "new.jsonl"
     sidecar = tmp_path / "sidecar.jsonl"
+    sidecar_manifest = tmp_path / "sidecar-manifest.json"
     environment = tmp_path / "legacy-env.json"
     _jsonl(s02, s02_rows)
     s02_hash = file_sha256(s02)
@@ -80,6 +82,25 @@ def test_merge_validator_accepts_legacy_sidecar_and_in_row_provenance(tmp_path: 
     _jsonl(legacy, obs_legacy)
     _jsonl(new, obs_new)
     _jsonl(sidecar, sidecar_rows)
+    sidecar_manifest.write_text(
+        json.dumps(
+            {
+                "schema": "vlm-faithfulness-legacy-baseline-verification-manifest-v1",
+                "inputs": {"s02": {"sha256": s02_hash}},
+                "result": {
+                    "sha256": file_sha256(sidecar),
+                    "verified_legacy_rows": 1,
+                },
+                "claim_boundary": {
+                    "observation_ledger_modified": False,
+                    "does_not_prove": (
+                        "The historical observation consumer performed verification."
+                    ),
+                },
+            }
+        )
+        + "\n"
+    )
     environment.write_text(
         json.dumps(
             {
@@ -113,6 +134,46 @@ def test_merge_validator_accepts_legacy_sidecar_and_in_row_provenance(tmp_path: 
         )
         + "\n"
     )
+    runtime = {
+        "platform": "test-cloud",
+        "python": "test",
+        "numpy": "test",
+        "pillow": "test",
+        "torch": "test",
+        "torch_cuda": "test",
+        "cudnn": "test",
+        "transformers": "test",
+        "gpu": {
+            "name": "test-5090",
+            "compute_capability": "test",
+            "driver": "test",
+        },
+    }
+    environment_fingerprint = run_provenance.gate_environment_fingerprint(runtime)
+    contract = tmp_path / "tail-contract.json"
+    contract.write_text(
+        json.dumps(
+            {
+                "schema": run_provenance.TAIL_CONTRACT_SCHEMA,
+                "authorized_shards": [[6154, 7577], [7577, 9000]],
+                "generator_identity": identity_key,
+                "canonical_s02_sha256": s02_hash,
+                "pool_manifest_sha256": run_provenance.M9_POOL_MANIFEST_SHA256,
+                "prereg_sha256": run_provenance.M9_PREREG_SHA256,
+                "environment_fingerprint": environment_fingerprint,
+                "code_commit": "reviewed",
+                "driver_sha256": "a",
+                "source_tree_sha256": "a",
+                "config_tree_sha256": "a",
+                "aokvqa_tree_sha256": "a",
+                "gate_sha256": "a",
+                "s02_ledger_sha256": s02_hash,
+                "image_root_tree_sha256": "a",
+            }
+        )
+        + "\n"
+    )
+    contract_hash = file_sha256(contract)
     new_manifest = tmp_path / "new-run-manifest.json"
     new_manifest.write_text(
         json.dumps(
@@ -120,6 +181,9 @@ def test_merge_validator_accepts_legacy_sidecar_and_in_row_provenance(tmp_path: 
                 "schema": "vlm-faithfulness-run-provenance-v1",
                 "run_id": "new-run",
                 "shard": {"start": 1, "end": 2, "generator_identity": identity_key},
+                "runtime": runtime,
+                "code": {"declared_commit": "reviewed"},
+                "launch_contract": {"sha256": contract_hash},
                 "artifacts": {
                     "driver_sha256": "a",
                     "source_tree_sha256": "a",
@@ -142,7 +206,16 @@ def test_merge_validator_accepts_legacy_sidecar_and_in_row_provenance(tmp_path: 
         "expected_records": 2,
         "generator_identity": identity_key,
         "canonical_s02": {"path": str(s02), "sha256": s02_hash},
-        "legacy_digest_sidecars": [{"path": str(sidecar), "sha256": file_sha256(sidecar)}],
+        "legacy_digest_sidecars": [
+            {
+                "path": str(sidecar),
+                "sha256": file_sha256(sidecar),
+                "verification_manifest": {
+                    "path": str(sidecar_manifest),
+                    "sha256": file_sha256(sidecar_manifest),
+                },
+            }
+        ],
         "observation_artifacts": [
             {
                 "path": str(legacy),
@@ -176,6 +249,10 @@ def test_merge_validator_accepts_legacy_sidecar_and_in_row_provenance(tmp_path: 
                                 "path": str(new_manifest),
                                 "sha256": new_manifest_hash,
                             },
+                            "launch_contract": {
+                                "path": str(contract),
+                                "sha256": contract_hash,
+                            },
                         },
                     }
                 ],
@@ -190,7 +267,9 @@ def test_merge_validator_accepts_legacy_sidecar_and_in_row_provenance(tmp_path: 
         "import sys; import scripts_validate_glm_merge as m; "
         "m.M9_EXPECTED_RECORDS=2; m.M9_CANONICAL_S02_SHA256=sys.argv.pop(1); "
         "m.M9_GLM_IDENTITY=sys.argv.pop(1); m.M9_LEGACY_END=1; "
-        "m.M9_SEGMENTS=[(0,1),(1,2)]; m.main()"
+        "m.M9_SEGMENTS=[(0,1),(1,2)]; "
+        f"m.M9_5090_ENVIRONMENT_FINGERPRINT='{environment_fingerprint}'; "
+        "m.M9_IMAGE_ROOT_TREE_SHA256='a'; m.main()"
     )
     subprocess.run(
         [

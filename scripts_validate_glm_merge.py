@@ -492,6 +492,14 @@ def main() -> None:
                         gate_index == len(gates) - 1,
                         f"gate route continues after failure for {record_id}",
                     )
+            failed_gate_indices = [i for i, gate in enumerate(gates) if gate[1] is False]
+            if failed_gate_indices:
+                _require(
+                    payload.get("route") == f"E{failed_gate_indices[0] + 1}",
+                    f"missing/wrong routed-aside E-code for {record_id}",
+                )
+            else:
+                _require("route" not in payload, f"passing gate path has a route for {record_id}")
             provenance = segment["provenance"]
             if provenance["mode"] == "in-row":
                 _require(payload.get("run_id") == provenance["run_id"], "run_id mismatch")

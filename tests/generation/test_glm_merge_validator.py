@@ -45,6 +45,7 @@ def test_merge_validator_accepts_legacy_sidecar_and_in_row_provenance(tmp_path: 
         payload: dict[str, object] = {
             "source": source_key,
             "gates": [["P1", False, "fixture route"]],
+            "route": "E1",
         }
         row = {"key": f"{instance_key}::pilot_obs", "payload": payload}
         if index == 0:

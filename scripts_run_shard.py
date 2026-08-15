@@ -42,10 +42,20 @@ from vlm_faithfulness_benchmark.generation.harness import run_s02
 from vlm_faithfulness_benchmark.generation.identity import InstanceId
 from vlm_faithfulness_benchmark.ingestion.aokvqa import SourceRecord, normalize_aokvqa
 from vlm_faithfulness_benchmark.run_ledger import RunLedger
+from vlm_faithfulness_benchmark.run_provenance import (
+    gate_environment_fingerprint,
+    load_and_verify_run_manifest,
+)
 
 ROOT = Path(__file__).resolve().parent
 
 GENERATOR_CHOICES = ("qwen", "glm", "glm-thinking", "deepseek", "kimi", "gemma")
+
+
+def _require(condition: bool, message: str) -> None:
+    """Raise unconditionally when a mass-run invariant is false."""
+    if not condition:
+        raise RuntimeError(message)
 
 
 def build_generator(name: str, image_root: Path) -> "object":
@@ -103,7 +113,7 @@ def load_registered_pool(manifest_path: Path) -> list[SourceRecord]:
         The identity-sorted Source Records.
 
     Raises:
-        AssertionError: If counts or the id-sequence hash diverge from the
+        RuntimeError: If counts or the id-sequence hash diverge from the
             manifest — the run must consume exactly the registered pool.
     """
     manifest = json.loads(manifest_path.read_text())
@@ -117,17 +127,18 @@ def load_registered_pool(manifest_path: Path) -> list[SourceRecord]:
             else:
                 n_excluded += 1
     records.sort(key=lambda r: r.identity.record_id)
-    assert len(records) == manifest["n_records"], (
-        f"pool size {len(records)} != registered {manifest['n_records']}"
+    _require(
+        len(records) == manifest["n_records"],
+        (f"pool size {len(records)} != registered {manifest['n_records']}"),
     )
-    assert n_excluded == manifest["n_ingestion_exclusions"], (
-        f"exclusions {n_excluded} != registered {manifest['n_ingestion_exclusions']}"
+    _require(
+        n_excluded == manifest["n_ingestion_exclusions"],
+        (f"exclusions {n_excluded} != registered {manifest['n_ingestion_exclusions']}"),
     )
-    digest = hashlib.sha256(
-        "\n".join(r.identity.record_id for r in records).encode()
-    ).hexdigest()
-    assert digest == manifest["sha256_of_record_id_sequence"], (
-        "pool id-sequence hash diverges from the registered manifest"
+    digest = hashlib.sha256("\n".join(r.identity.record_id for r in records).encode()).hexdigest()
+    _require(
+        digest == manifest["sha256_of_record_id_sequence"],
+        ("pool id-sequence hash diverges from the registered manifest"),
     )
     return records
 
@@ -143,7 +154,7 @@ def progress_bar(done: int, total: int, width: int = 30) -> str:
     Returns:
         A string like ``[############------------------]  40.0%``.
     """
-    assert total > 0, "empty total"
+    _require(total > 0, "empty total")
     frac = min(1.0, done / total)
     filled = int(width * frac)
     return f"[{'#' * filled}{'-' * (width - filled)}] {100 * frac:5.1f}%"
@@ -163,7 +174,7 @@ def wilson_interval(successes: int, n: int, z: float = 1.96) -> tuple[float, flo
     Returns:
         ``(lower, upper)`` bounds in [0, 1].
     """
-    assert n > 0 and 0 <= successes <= n, "invalid binomial counts"
+    _require(n > 0 and 0 <= successes <= n, "invalid binomial counts")
     p = successes / n
     denom = 1.0 + z * z / n
     center = (p + z * z / (2 * n)) / denom
@@ -193,9 +204,10 @@ def run_calibration_gate(
     gate = prereg["instrument_sanity_gate"]
     slice_records = [pool[i] for i in gate["cal50_positions"]]
     ids = [r.identity.record_id for r in slice_records]
-    assert (
-        hashlib.sha256("\n".join(ids).encode()).hexdigest() == gate["cal50_sha256"]
-    ), "CAL-50 slice diverges from the registered pre-registration"
+    _require(
+        hashlib.sha256("\n".join(ids).encode()).hexdigest() == gate["cal50_sha256"],
+        "CAL-50 slice diverges from the registered pre-registration",
+    )
     parsed = agree = 0
     for done, rec in enumerate(slice_records, start=1):
         outcome = gen(rec)  # type: ignore[operator]
@@ -222,9 +234,12 @@ def run_calibration_gate(
         "agreement_wilson95": [round(lo, 4), round(hi, 4)],
         "passed": parseability >= gate["parseability_floor"]
         and agreement >= gate["agreement_floor"],
+        "environment_fingerprint": gate_environment_fingerprint(),
     }
-    log(f"CAL-50 gate: parseability={parseability:.3f} agreement={agreement:.3f} "
-        f"CI=[{lo:.3f},{hi:.3f}] passed={result['passed']}")
+    log(
+        f"CAL-50 gate: parseability={parseability:.3f} agreement={agreement:.3f} "
+        f"CI=[{lo:.3f},{hi:.3f}] passed={result['passed']}"
+    )
     return result
 
 
@@ -235,6 +250,25 @@ def main() -> None:
     ap.add_argument("--shard-start", type=int)
     ap.add_argument("--shard-end", type=int)
     ap.add_argument("--image-root", type=Path, default=ROOT / "data/coco-pool")
+    ap.add_argument(
+        "--gate-artifact",
+        type=Path,
+        help="gate JSON path; use a fresh environment-bound artifact for new mass runs",
+    )
+    ap.add_argument(
+        "--run-manifest",
+        type=Path,
+        help="immutable environment manifest required for every mass-run shard",
+    )
+    ap.add_argument(
+        "--code-commit",
+        help="reviewed source commit whose staged content hashes the manifest verifies",
+    )
+    ap.add_argument(
+        "--launch-contract",
+        type=Path,
+        help="reviewed M9 tail contract required for every new GLM tail shard",
+    )
     ap.add_argument(
         "--run-gate",
         action="store_true",
@@ -249,10 +283,10 @@ def main() -> None:
     position = {rec.identity.record_id: i for i, rec in enumerate(pool)}
     run_dir = ROOT / "data/runs"
     run_dir.mkdir(parents=True, exist_ok=True)
-    gate_path = run_dir / f"gate-{args.generator}.json"
+    gate_path = args.gate_artifact or run_dir / f"gate-{args.generator}.json"
 
     if args.run_gate:
-        log_path = run_dir / f"gate-{args.generator}.log"
+        log_path = gate_path.with_suffix(".log")
 
         def glog(msg: str) -> None:
             line = f"{time.strftime('%Y-%m-%d %H:%M:%S')} [gate-{args.generator}] {msg}"
@@ -265,16 +299,23 @@ def main() -> None:
         result = run_calibration_gate(gen, pool, glog)
         gate_path.write_text(json.dumps(result, indent=2) + "\n")
         glog(f"gate artifact written: {gate_path.name}")
-        assert result["passed"], (
-            "CAL-50 gate FAILED — halt the lane and file an amendment "
-            "(prereg-m9-v1: the slice is never redrawn, the floors never retuned)"
+        _require(
+            result["passed"],
+            (
+                "CAL-50 gate FAILED — halt the lane and file an amendment "
+                "(prereg-m9-v1: the slice is never redrawn, the floors never retuned)"
+            ),
         )
         return
 
-    assert args.shard_start is not None and args.shard_end is not None, (
-        "provide --shard-start/--shard-end, or --run-gate"
+    _require(
+        args.shard_start is not None and args.shard_end is not None,
+        ("provide --shard-start/--shard-end, or --run-gate"),
     )
-    assert 0 <= args.shard_start < args.shard_end <= n_pool, "bad shard bounds"
+    _require(args.run_manifest is not None, "mass-run shards require --run-manifest")
+    _require(args.code_commit is not None, "mass-run shards require --code-commit")
+    _require(args.launch_contract is not None, "mass-run shards require --launch-contract")
+    _require(0 <= args.shard_start < args.shard_end <= n_pool, "bad shard bounds")
     shard = pool[args.shard_start : args.shard_end]
 
     tag = f"{args.generator}-{args.shard_start:05d}-{args.shard_end:05d}"
@@ -287,28 +328,57 @@ def main() -> None:
             fh.write(line + "\n")
 
     log(f"pool verified against manifest ({n_pool} records); shard n={len(shard)}")
+    # Registered gate (prereg-m9-v1): a shard runs only after this
+    # generator-contract passed CAL-50 in THIS environment, and only under
+    # the exact identity the gate certified. Validate it and the complete
+    # run manifest before loading a model onto the GPU.
+    _require(gate_path.exists(), (f"no gate artifact for {args.generator!r}: run --run-gate first"))
+    gate_result = json.loads(gate_path.read_text())
+    _require(gate_result.get("passed") is True, "gate artifact records a FAILED gate")
+    _require(
+        gate_result.get("environment_fingerprint") == gate_environment_fingerprint(),
+        (
+            "gate artifact was produced by a different runtime/GPU environment class; "
+            "run --run-gate with a fresh --gate-artifact"
+        ),
+    )
+    gate_identity = gate_result.get("identity")
+    _require(isinstance(gate_identity, str), "gate artifact has no generator identity")
+
+    s02_ledger = RunLedger(run_dir / f"s02-{tag}.jsonl")
+    run_provenance = load_and_verify_run_manifest(
+        args.run_manifest,
+        project_root=ROOT,
+        generator=args.generator,
+        shard_start=args.shard_start,
+        shard_end=args.shard_end,
+        generator_identity=gate_identity,
+        code_commit=args.code_commit,
+        gate_path=gate_path,
+        s02_path=run_dir / f"s02-{tag}.jsonl",
+        image_root=args.image_root,
+        launch_contract_path=args.launch_contract,
+    )
+    log(
+        "run provenance verified before model load: "
+        f"run_id={run_provenance['run_id']} "
+        f"sha256={run_provenance['run_provenance_digest']}"
+    )
+
     log("loading generator …")
     gen = build_generator(args.generator, args.image_root)
     gen_id = gen.identity()  # type: ignore[attr-defined]
     identity_key = gen_id.key()
     # Corpus runs are bf16-only: a quantized subject is a different composite
     # identity and must never contribute corpus records.
-    assert "int8" not in identity_key, (
-        f"quantized identity refused for corpus runs: {identity_key}"
+    _require(
+        "int8" not in identity_key, (f"quantized identity refused for corpus runs: {identity_key}")
+    )
+    _require(
+        gate_identity == identity_key,
+        ("gate artifact certifies a DIFFERENT composite identity; re-run --run-gate"),
     )
     log(f"generator identity: {identity_key}")
-
-    # Registered gate (prereg-m9-v1): a shard runs only after this
-    # generator-contract passed CAL-50 in THIS environment, and only under
-    # the exact identity the gate certified.
-    assert gate_path.exists(), (
-        f"no gate artifact for {args.generator!r}: run --run-gate first"
-    )
-    gate_result = json.loads(gate_path.read_text())
-    assert gate_result["passed"], "gate artifact records a FAILED gate"
-    assert gate_result["identity"] == identity_key, (
-        "gate artifact certifies a DIFFERENT composite identity; re-run --run-gate"
-    )
     log("CAL-50 gate artifact verified for this identity")
 
     def image_path(rec: SourceRecord) -> Path:
@@ -324,7 +394,6 @@ def main() -> None:
         partner = pool[wrong_image_partner_index(position[rec.identity.record_id], n_pool)]
         return load_image(partner)
 
-    s02_ledger = RunLedger(run_dir / f"s02-{tag}.jsonl")
     t0 = time.time()
     s02_done = [0]
 
@@ -333,8 +402,10 @@ def main() -> None:
         if s02_done[0] % 100 == 0:
             pace = (time.time() - t0) / s02_done[0]
             eta_h = (len(shard) - s02_done[0]) * pace / 3600
-            log(f"s02 {progress_bar(s02_done[0], len(shard))} "
-                f"{s02_done[0]}/{len(shard)} ({pace:.1f}s/rec, ~{eta_h:.1f}h left)")
+            log(
+                f"s02 {progress_bar(s02_done[0], len(shard))} "
+                f"{s02_done[0]}/{len(shard)} ({pace:.1f}s/rec, ~{eta_h:.1f}h left)"
+            )
 
     r1 = run_s02(shard, gen, gen_id, s02_ledger, on_progress=s02_progress)  # type: ignore[arg-type]
     log(f"s02: {dict(r1)} in {time.time() - t0:.0f}s")
@@ -363,14 +434,22 @@ def main() -> None:
         if done[0] % 10 == 0:
             pace = (time.time() - t1) / done[0]
             eta_d = (len(shard) - done[0]) * pace / 86400
-            log(f"obs {progress_bar(done[0], len(shard))} "
-                f"{done[0]}/{len(shard)} committed ({pace:.0f}s/rec, ~{eta_d:.1f}d left)")
+            log(
+                f"obs {progress_bar(done[0], len(shard))} "
+                f"{done[0]}/{len(shard)} committed ({pace:.0f}s/rec, ~{eta_d:.1f}d left)"
+            )
 
     make_instance: Callable[[SourceRecord], InstanceId] = lambda rec: InstanceId(  # noqa: E731
         gen_id, rec.identity
     )
     r2 = run_pilot_observation(
-        shard, s02_payloads, make_instance, io, obs_ledger, on_progress=progress
+        shard,
+        s02_payloads,
+        make_instance,
+        io,
+        obs_ledger,
+        on_progress=progress,
+        run_provenance=run_provenance,
     )
     log(f"obs: {dict(r2)} in {(time.time() - t1) / 3600:.2f}h")
     s02_ledger.close()

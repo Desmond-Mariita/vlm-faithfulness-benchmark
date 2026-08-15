@@ -79,7 +79,8 @@ class RunLedger:
                     f"ledger corruption at interior line {i + 1}: {line[:80]!r}"
                 ) from err
             key = entry["key"]
-            assert key not in self._committed, f"duplicate ledger key {key!r} (R2/R5)"
+            if key in self._committed:
+                raise RuntimeError(f"duplicate ledger key {key!r} (R2/R5)")
             self._committed[key] = entry["payload"]
 
     def is_committed(self, key: str) -> bool:
@@ -92,7 +93,8 @@ class RunLedger:
         Raises:
             AssertionError: If ``key`` is not committed.
         """
-        assert key in self._committed, f"no committed record for {key!r}"
+        if key not in self._committed:
+            raise RuntimeError(f"no committed record for {key!r}")
         return self._committed[key]
 
     def commit(self, key: str, payload: Mapping[str, Any]) -> None:
@@ -107,11 +109,11 @@ class RunLedger:
                 committed record is a pipeline conformance error
                 (`06a` R2/R5; design §5.3).
         """
-        assert key not in self._committed, (
-            f"conformance error: second commit for {key!r} (06a R2/R5)"
-        )
+        if key in self._committed:
+            raise RuntimeError(f"conformance error: second commit for {key!r} (06a R2/R5)")
         line = json.dumps({"key": key, "payload": dict(payload)}, sort_keys=True)
-        assert "\n" not in line, "ledger entries must be single-line"
+        if "\n" in line:
+            raise RuntimeError("ledger entries must be single-line")
         self._fh.write(line + "\n")
         self._fh.flush()
         os.fsync(self._fh.fileno())
@@ -124,4 +126,3 @@ class RunLedger:
     def close(self) -> None:
         """Close the underlying file handle."""
         self._fh.close()
-

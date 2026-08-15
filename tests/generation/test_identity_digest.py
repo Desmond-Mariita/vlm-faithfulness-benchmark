@@ -101,7 +101,7 @@ class TestBaselineDigest:
         """CC4: a regenerated (different) rationale must halt, not route."""
         recorded = baseline_digest(self.TUPLE)
         regenerated = {"chosen_answer": "B", "rationale": "an umbrella is held by the man"}
-        with pytest.raises(AssertionError, match="digest mismatch"):
+        with pytest.raises(RuntimeError, match="digest mismatch"):
             verify_baseline_digest(regenerated, recorded)
 
     def test_non_ascii_content_digests_deterministically(self) -> None:
@@ -112,5 +112,5 @@ class TestBaselineDigest:
 
     def test_non_string_designated_field_rejected(self) -> None:
         """Designated surface is textual; anything else is a caller defect."""
-        with pytest.raises(AssertionError):
+        with pytest.raises(RuntimeError):
             baseline_digest({"chosen_answer": 1, "rationale": "r"})

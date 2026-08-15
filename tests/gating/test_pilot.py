@@ -63,8 +63,8 @@ def _s02(records: list[SourceRecord]) -> dict[str, dict[str, object]]:
     payloads: dict[str, dict[str, object]] = {}
     for record in records:
         output_tuple = {
-                "chosen_answer": "umbrella",
-                "rationale": "the man is holding an umbrella against the rain",
+            "chosen_answer": "umbrella",
+            "rationale": "the man is holding an umbrella against the rain",
         }
         payloads[InstanceId(GEN_ID, record.identity).key()] = {
             "output_tuple": output_tuple,
@@ -77,8 +77,14 @@ def test_full_observation_row_for_image_dependent_candidate(tmp_path: Path) -> N
     """Gates pass, 4/4 flips recorded, saliency + drifts + coherence collected."""
     records = [_record(1)]
     ledger = RunLedger(tmp_path / "pilot.jsonl")
+    provenance = {"run_id": "test-run", "run_provenance_digest": "a" * 64}
     result = run_pilot_observation(
-        records, _s02(records), lambda r: InstanceId(GEN_ID, r.identity), _io(), ledger
+        records,
+        _s02(records),
+        lambda r: InstanceId(GEN_ID, r.identity),
+        _io(),
+        ledger,
+        run_provenance=provenance,
     )
     assert result == {"committed": 1, "skipped": 0, "missing_s02": 0}
     row = ledger.payload(f"{InstanceId(GEN_ID, records[0].identity).key()}::pilot_obs")
@@ -88,6 +94,25 @@ def test_full_observation_row_for_image_dependent_candidate(tmp_path: Path) -> N
     assert row["coherence"] == "pass"
     assert row["counterfactual_rationale"]
     assert row["baseline_digest"] == next(iter(_s02(records).values()))["baseline_digest"]
+    assert row["run_id"] == "test-run"
+    assert row["run_provenance_digest"] == "a" * 64
+    ledger.close()
+
+
+def test_invalid_run_provenance_halts_before_commit(tmp_path: Path) -> None:
+    """Malformed provenance can never enter a committed mass-run row."""
+    records = [_record(1)]
+    ledger = RunLedger(tmp_path / "pilot.jsonl")
+    with pytest.raises(RuntimeError, match="exactly run_id"):
+        run_pilot_observation(
+            records,
+            _s02(records),
+            lambda r: InstanceId(GEN_ID, r.identity),
+            _io(),
+            ledger,
+            run_provenance={"run_id": "missing-digest"},
+        )
+    assert not ledger.is_committed(f"{InstanceId(GEN_ID, records[0].identity).key()}::pilot_obs")
     ledger.close()
 
 
@@ -100,10 +125,8 @@ def test_baseline_digest_mismatch_halts_before_observation(tmp_path: Path) -> No
     assert isinstance(output_tuple, dict)
     output_tuple["rationale"] = "substituted downstream rationale"
     ledger = RunLedger(tmp_path / "pilot.jsonl")
-    with pytest.raises(AssertionError, match="baseline-of-record digest mismatch"):
-        run_pilot_observation(
-            records, s02, lambda r: InstanceId(GEN_ID, r.identity), _io(), ledger
-        )
+    with pytest.raises(RuntimeError, match="baseline-of-record digest mismatch"):
+        run_pilot_observation(records, s02, lambda r: InstanceId(GEN_ID, r.identity), _io(), ledger)
     assert not ledger.is_committed(f"{key}::pilot_obs")
     ledger.close()
 
@@ -115,10 +138,8 @@ def test_missing_baseline_digest_halts_before_observation(tmp_path: Path) -> Non
     key = next(iter(s02))
     del s02[key]["baseline_digest"]
     ledger = RunLedger(tmp_path / "pilot.jsonl")
-    with pytest.raises(AssertionError, match="no baseline_digest"):
-        run_pilot_observation(
-            records, s02, lambda r: InstanceId(GEN_ID, r.identity), _io(), ledger
-        )
+    with pytest.raises(RuntimeError, match="no baseline_digest"):
+        run_pilot_observation(records, s02, lambda r: InstanceId(GEN_ID, r.identity), _io(), ledger)
     ledger.close()
 
 
@@ -132,9 +153,7 @@ def test_gate_routed_candidate_stops_at_gates(tmp_path: Path) -> None:
     assert isinstance(output_tuple, dict)
     s02[key]["baseline_digest"] = baseline_digest(output_tuple)
     ledger = RunLedger(tmp_path / "pilot.jsonl")
-    run_pilot_observation(
-        records, s02, lambda r: InstanceId(GEN_ID, r.identity), _io(), ledger
-    )
+    run_pilot_observation(records, s02, lambda r: InstanceId(GEN_ID, r.identity), _io(), ledger)
     row = ledger.payload(f"{key}::pilot_obs")
     assert row["route"] == "E2"
     assert "readings" not in row
@@ -146,8 +165,11 @@ def test_image_independent_candidate_records_zero_flips(tmp_path: Path) -> None:
     records = [_record(1)]
     ledger = RunLedger(tmp_path / "pilot.jsonl")
     run_pilot_observation(
-        records, _s02(records), lambda r: InstanceId(GEN_ID, r.identity),
-        _io(image_dependent=False), ledger,
+        records,
+        _s02(records),
+        lambda r: InstanceId(GEN_ID, r.identity),
+        _io(image_dependent=False),
+        ledger,
     )
     row = ledger.payload(f"{InstanceId(GEN_ID, records[0].identity).key()}::pilot_obs")
     assert row["flip_count"] == 0

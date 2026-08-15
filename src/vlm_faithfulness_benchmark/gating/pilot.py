@@ -114,7 +114,8 @@ def _observe_candidate(
     if e_code is not None:
         row["route"] = e_code
         return row
-    assert isinstance(chosen, str) and isinstance(rationale, str)
+    if not isinstance(chosen, str) or not isinstance(rationale, str):
+        raise RuntimeError("P1 passed without a string answer and rationale")
     baseline_chosen_index = next(
         i for i, o in enumerate(record.options) if o.strip().lower() == chosen.strip().lower()
     )
@@ -126,7 +127,9 @@ def _observe_candidate(
     readings: dict[str, RegimeReading] = {}
     for regime in REGIMES:  # all six, including `real` (RIP §2.1; review Major)
         variant = apply_regime(
-            regime, image, record_index,
+            regime,
+            image,
+            record_index,
             partner_image=partner if regime == "wrong-image" else None,
         )
         scores = io.score_options(record, variant)
@@ -140,9 +143,7 @@ def _observe_candidate(
         row["flip_count"] = None  # E4 territory at labeling time
         return row
     row["flip_count"] = sum(
-        1
-        for r in DESTRUCTIVE_REGIMES
-        if not readings[r].baseline_held(baseline_chosen_index)
+        1 for r in DESTRUCTIVE_REGIMES if not readings[r].baseline_held(baseline_chosen_index)
     )
     hflip = readings["hflip"]
     row["hflip"] = {
@@ -190,9 +191,9 @@ def _observe_candidate(
     try:
         patches = control_patches(region, image.shape[0], image.shape[1])
         top, left, bottom, right = region.box
-        coverage_ratio = sum(
-            (pb - pt) * (pr - pl) for pt, pl, pb, pr in patches
-        ) / ((bottom - top) * (right - left))
+        coverage_ratio = sum((pb - pt) * (pr - pl) for pt, pl, pb, pr in patches) / (
+            (bottom - top) * (right - left)
+        )
     except AssertionError:
         control_applicable = False
     row["control_edit_applicable"] = control_applicable
@@ -220,6 +221,7 @@ def run_pilot_observation(
     io: PilotIO,
     ledger: RunLedger,
     on_progress: Callable[[str], None] | None = None,
+    run_provenance: Mapping[str, str] | None = None,
 ) -> Mapping[str, int]:
     """Run the pilot observation phase, resumably (record-atomic).
 
@@ -231,6 +233,9 @@ def run_pilot_observation(
         io: The injected model/data surface.
         ledger: The pilot run ledger.
         on_progress: Optional per-record callback.
+        run_provenance: Optional immutable mass-run reference containing exactly
+            ``run_id`` and ``run_provenance_digest``. Development/pilot callers
+            may omit it; the mass-run driver requires it.
 
     Returns:
         ``{"committed": n_new, "skipped": n_resumed, "missing_s02": n}``.
@@ -240,26 +245,46 @@ def run_pilot_observation(
         record_index = io.record_index_of(record)  # dataset-identity position
         instance = instance_of(record)
         key = f"{instance.key()}::pilot_obs"
-        if ledger.is_committed(key):
-            skipped += 1
-            continue
         s02 = s02_payloads.get(instance.key())
         if s02 is None:
             missing += 1
             continue
         tuple_payload = s02["output_tuple"]
-        assert isinstance(tuple_payload, Mapping)
+        if not isinstance(tuple_payload, Mapping):
+            raise RuntimeError("DM-Q1: committed S02 output_tuple is not an object")
         recorded_digest = s02.get("baseline_digest")
-        assert isinstance(recorded_digest, str), (
-            "DM-Q1: committed S02 payload has no baseline_digest; "
-            "refusing to consume an undesignated baseline"
-        )
+        if not isinstance(recorded_digest, str):
+            raise RuntimeError(
+                "DM-Q1: committed S02 payload has no baseline_digest; "
+                "refusing to consume an undesignated baseline"
+            )
         # DM Q1 Option A: verify the exact baseline before any observation
         # consumes it. A mismatch is a conformance error, never a route.
         verify_baseline_digest(tuple_payload, recorded_digest)
+        if run_provenance is not None:
+            if set(run_provenance) != {"run_id", "run_provenance_digest"}:
+                raise RuntimeError(
+                    "run provenance must contain exactly run_id and run_provenance_digest"
+                )
+            if not all(isinstance(value, str) and value for value in run_provenance.values()):
+                raise RuntimeError("run provenance values must be non-empty strings")
+        if ledger.is_committed(key):
+            existing = ledger.payload(key)
+            if run_provenance is not None and existing.get("source") != s02.get("source"):
+                raise RuntimeError(f"resume source provenance mismatch for {key}")
+            if existing.get("baseline_digest") != recorded_digest:
+                raise RuntimeError(f"resume baseline provenance mismatch for {key}")
+            if run_provenance is not None and any(
+                existing.get(field) != value for field, value in run_provenance.items()
+            ):
+                raise RuntimeError(f"resume run provenance mismatch for {key}")
+            skipped += 1
+            continue
         row = _observe_candidate(record, record_index, tuple_payload, io)
         # Bind the verified baseline into this consumer's own provenance.
         row["baseline_digest"] = recorded_digest
+        if run_provenance is not None:
+            row.update(run_provenance)
         ledger.commit(key, row)
         committed += 1
         if on_progress is not None:

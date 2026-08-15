@@ -40,7 +40,7 @@ def _canonical_form(output_tuple: Mapping[str, object]) -> bytes:
         Canonical UTF-8 JSON bytes over exactly the designated fields.
 
     Raises:
-        AssertionError: If a designated field holds a non-string, non-null
+        RuntimeError: If a designated field holds a non-string, non-null
             value — the designated surface is textual by construction
             (`08` N4.6 fixes the rationale object; the chosen answer is the
             emitted option text/index as a string).
@@ -48,9 +48,10 @@ def _canonical_form(output_tuple: Mapping[str, object]) -> bytes:
     designated: dict[str, object] = {}
     for field_name in DESIGNATED_FIELDS:
         value = output_tuple.get(field_name)
-        assert value is None or isinstance(value, str), (
-            f"designated field '{field_name}' must be str or absent, got {type(value).__name__}"
-        )
+        if value is not None and not isinstance(value, str):
+            raise RuntimeError(
+                f"designated field '{field_name}' must be str or absent, got {type(value).__name__}"
+            )
         designated[field_name] = value
     # sort_keys + separators yields the JCS form for this value domain.
     canonical = json.dumps(designated, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
@@ -84,12 +85,13 @@ def verify_baseline_digest(output_tuple: Mapping[str, object], recorded_digest: 
         recorded_digest: The digest recorded at the S02 commit.
 
     Raises:
-        AssertionError: On mismatch — a regenerated or substituted baseline
+        RuntimeError: On mismatch — a regenerated or substituted baseline
             is a pipeline conformance error (halt loudly; never a route,
             never silently repaired).
     """
     actual = baseline_digest(output_tuple)
-    assert actual == recorded_digest, (
-        "baseline-of-record digest mismatch (CC4/DM-Q1 conformance error): "
-        f"recorded {recorded_digest}, computed {actual}"
-    )
+    if actual != recorded_digest:
+        raise RuntimeError(
+            "baseline-of-record digest mismatch (CC4/DM-Q1 conformance error): "
+            f"recorded {recorded_digest}, computed {actual}"
+        )

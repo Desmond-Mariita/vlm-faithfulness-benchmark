@@ -26,6 +26,7 @@ __all__ = [
     "load_and_verify_tail_contract",
     "load_and_verify_run_manifest",
     "tree_sha256",
+    "verify_reviewed_git_content",
 ]
 
 MANIFEST_SCHEMA = "vlm-faithfulness-run-provenance-v1"
@@ -174,6 +175,52 @@ def _require_equal(actual: object, expected: object, label: str) -> None:
     )
 
 
+def verify_reviewed_git_content(project_root: Path, code_commit: str) -> None:
+    """Bind the runtime paths to an exact, clean checked-out Git commit.
+
+    Runtime ledgers/logs may make the overall worktree dirty. Only the executable
+    mass-run surface is checked, and both tracked modifications and untracked files
+    within that surface are rejected.
+    """
+    head = subprocess.run(
+        ["git", "-C", str(project_root), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    _require_equal(head, code_commit, "checked-out Git commit")
+    scope = [
+        "scripts_run_shard.py",
+        "scripts_capture_run_manifest.py",
+        "scripts_create_tail_launch_contract.py",
+        "scripts_validate_glm_merge.py",
+        "scripts_verify_legacy_digests.py",
+        "src",
+        "config",
+        "data/aokvqa",
+    ]
+    tracked = subprocess.run(
+        ["git", "-C", str(project_root), "diff", "--quiet", code_commit, "--", *scope]
+    )
+    _require(tracked.returncode == 0, "reviewed runtime has tracked modifications")
+    untracked = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(project_root),
+            "ls-files",
+            "--others",
+            "--exclude-standard",
+            "--",
+            *scope,
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.splitlines()
+    _require(not untracked, f"reviewed runtime has untracked files: {untracked!r}")
+
+
 def load_and_verify_tail_contract(
     path: Path,
     *,
@@ -212,6 +259,7 @@ def load_and_verify_tail_contract(
         M9_5090_ENVIRONMENT_FINGERPRINT,
         "approved 5090 environment",
     )
+    verify_reviewed_git_content(project_root, code_commit)
     gate = json.loads(gate_path.read_text())
     _require_equal(gate.get("identity"), generator_identity, "gate identity")
     _require(gate.get("passed") is True, "contract gate did not pass")

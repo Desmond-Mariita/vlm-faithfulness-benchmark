@@ -23,6 +23,7 @@ from vlm_faithfulness_benchmark.run_provenance import (
     file_sha256,
     gate_environment_fingerprint,
     tree_sha256,
+    verify_reviewed_git_content,
 )
 
 ROOT = Path(__file__).resolve().parent
@@ -70,6 +71,7 @@ def main() -> None:
         text=True,
     ).stdout.strip()
     _require(head == args.code_commit, "declared commit is not checked-out HEAD")
+    verify_reviewed_git_content(ROOT, args.code_commit)
     runtime = capture_runtime()
     environment_fingerprint = gate_environment_fingerprint(runtime)
     _require(

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import subprocess
 from copy import deepcopy
 from pathlib import Path
 
@@ -99,6 +100,40 @@ def test_tail_contract_rejects_unregistered_environment_before_artifact_access(
             s02_path=tmp_path / "absent-s02.jsonl",
             image_root=tmp_path / "absent-images",
         )
+
+
+def test_reviewed_git_content_rejects_untracked_runtime_file(tmp_path: Path) -> None:
+    """An untracked adapter cannot silently enter a reviewed source tree."""
+    root = tmp_path / "project"
+    (root / "src").mkdir(parents=True)
+    (root / "src/tracked.py").write_text("tracked = True\n")
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    subprocess.run(["git", "-C", str(root), "add", "src/tracked.py"], check=True)
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(root),
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.invalid",
+            "commit",
+            "-qm",
+            "fixture",
+        ],
+        check=True,
+    )
+    commit = subprocess.run(
+        ["git", "-C", str(root), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    run_provenance.verify_reviewed_git_content(root, commit)
+    (root / "src/untracked.py").write_text("unreviewed = True\n")
+    with pytest.raises(RuntimeError, match="untracked files"):
+        run_provenance.verify_reviewed_git_content(root, commit)
 
 
 def _project(tmp_path: Path) -> tuple[Path, Path, Path, Path]:

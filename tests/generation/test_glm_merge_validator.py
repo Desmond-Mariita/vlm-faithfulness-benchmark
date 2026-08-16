@@ -7,6 +7,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+import scripts_validate_glm_merge as merge_validator
+
 from vlm_faithfulness_benchmark import run_provenance
 from vlm_faithfulness_benchmark.generation.digest import baseline_digest
 from vlm_faithfulness_benchmark.run_provenance import file_sha256
@@ -14,6 +17,100 @@ from vlm_faithfulness_benchmark.run_provenance import file_sha256
 
 def _jsonl(path: Path, rows: list[dict[str, object]]) -> None:
     path.write_text("".join(json.dumps(row, sort_keys=True) + "\n" for row in rows))
+
+
+def test_tail_manifest_rejects_cross_paired_approved_environment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An approved runtime cannot be paired with another approved host's contract."""
+    runtime = {
+        "platform": "test",
+        "python": "3.12",
+        "numpy": "2",
+        "pillow": "12",
+        "torch": "2.12",
+        "torch_cuda": "13",
+        "cudnn": 92000,
+        "transformers": "5.15",
+        "gpu": {
+            "name": "NVIDIA GeForce RTX 5090",
+            "compute_capability": "12.0",
+            "driver": "580-a",
+        },
+    }
+    runtime_environment = run_provenance.gate_environment_fingerprint(runtime)
+    other_environment = "b" * 64
+    monkeypatch.setattr(
+        merge_validator,
+        "M9_TAIL_5090_ENVIRONMENT_FINGERPRINTS",
+        {runtime_environment, other_environment},
+    )
+    monkeypatch.setattr(merge_validator, "M9_CANONICAL_S02_SHA256", "s02")
+    monkeypatch.setattr(merge_validator, "M9_IMAGE_ROOT_TREE_SHA256", "images")
+    identity = "identity"
+    observation = tmp_path / "obs.jsonl"
+    observation.write_text("{}\n")
+    contract = tmp_path / "contract.json"
+    contract.write_text(
+        json.dumps(
+            {
+                "schema": run_provenance.TAIL_CONTRACT_SCHEMA,
+                "profile": "m9-glm-tail-v1",
+                "authorized_shards": run_provenance.M9_TAIL_RANGES,
+                "generator_identity": identity,
+                "canonical_s02_sha256": "s02",
+                "pool_manifest_sha256": run_provenance.M9_POOL_MANIFEST_SHA256,
+                "prereg_sha256": run_provenance.M9_PREREG_SHA256,
+                "environment_fingerprint": other_environment,
+                "runtime_class": run_provenance.environment_class(runtime),
+            }
+        )
+    )
+    contract_sha256 = file_sha256(contract)
+    artifacts = {
+        "driver_sha256": "a",
+        "source_tree_sha256": "a",
+        "config_tree_sha256": "a",
+        "aokvqa_tree_sha256": "a",
+        "gate_sha256": "a",
+        "s02_ledger_sha256": "s02",
+        "image_root_tree_sha256": "images",
+    }
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "schema": run_provenance.MANIFEST_SCHEMA,
+                "run_id": "run",
+                "shard": {"start": 6154, "end": 7577, "generator_identity": identity},
+                "runtime": runtime,
+                "code": {"declared_commit": None},
+                "launch_contract": {"sha256": contract_sha256},
+                "artifacts": artifacts,
+                "deterministic_scope": {"on_stack": True, "cross_stack": False},
+            }
+        )
+    )
+    manifest_sha256 = file_sha256(manifest)
+    plan = tmp_path / "plan.json"
+    plan.write_text("{}\n")
+    provenance = {
+        "mode": "in-row",
+        "run_id": "run",
+        "run_provenance_digest": manifest_sha256,
+        "manifest": {"path": str(manifest), "sha256": manifest_sha256},
+        "launch_contract": {"path": str(contract), "sha256": contract_sha256},
+    }
+    with pytest.raises(RuntimeError, match="contract/run manifest environment mismatch"):
+        merge_validator._verify_provenance_manifest(
+            plan,
+            provenance,
+            6154,
+            7577,
+            identity,
+            observation,
+            file_sha256(observation),
+        )
 
 
 def test_merge_validator_accepts_legacy_sidecar_and_in_row_provenance(tmp_path: Path) -> None:
@@ -182,12 +279,14 @@ def test_merge_validator_accepts_legacy_sidecar_and_in_row_provenance(tmp_path: 
         json.dumps(
             {
                 "schema": run_provenance.TAIL_CONTRACT_SCHEMA,
-                "authorized_shards": [[6154, 7577], [7577, 9000]],
+                "profile": "m9-glm-tail-v1",
+                "authorized_shards": [[1, 2]],
                 "generator_identity": identity_key,
                 "canonical_s02_sha256": s02_hash,
                 "pool_manifest_sha256": run_provenance.M9_POOL_MANIFEST_SHA256,
                 "prereg_sha256": run_provenance.M9_PREREG_SHA256,
                 "environment_fingerprint": environment_fingerprint,
+                "runtime_class": run_provenance.environment_class(runtime),
                 "code_commit": "reviewed",
                 "driver_sha256": "a",
                 "source_tree_sha256": "a",
@@ -302,6 +401,8 @@ def test_merge_validator_accepts_legacy_sidecar_and_in_row_provenance(tmp_path: 
         "m.M9_LOCAL_EVIDENCE={'unbounded_run_log_sha256':'u',"
         "'bounded_run_log_sha256':'b'}; "
         f"m.M9_5090_ENVIRONMENT_FINGERPRINT='{environment_fingerprint}'; "
+        f"m.M9_TAIL_5090_ENVIRONMENT_FINGERPRINTS={{'{environment_fingerprint}'}}; "
+        "m.M9_TAIL_RANGES=[[1,2]]; "
         "m.M9_IMAGE_ROOT_TREE_SHA256='a'; m.main()"
     )
     subprocess.run(
@@ -324,14 +425,35 @@ def test_merge_validator_accepts_legacy_sidecar_and_in_row_provenance(tmp_path: 
     assert len(merged.read_text().splitlines()) == 2
     assert json.loads(report.read_text())["status"] == "PASS"
 
+    plan["observation_artifacts"][0]["segments"][0]["provenance"]["mode"] = "in-row"
+    plan_path.write_text(json.dumps(plan, indent=2) + "\n")
+    wrong_mode = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            bootstrap,
+            s02_hash,
+            identity_key,
+            "--plan",
+            str(plan_path),
+        ],
+        cwd=root,
+        capture_output=True,
+        text=True,
+    )
+    assert wrong_mode.returncode != 0
+    assert "only new GLM tail segments may use in-row" in wrong_mode.stderr
+    plan["observation_artifacts"][0]["segments"][0]["provenance"]["mode"] = "external"
+    plan_path.write_text(json.dumps(plan, indent=2) + "\n")
+
     def rejected_environment(mutator: object, expected_message: str) -> None:
         environment_payload = json.loads(environment.read_text())
         assert callable(mutator)
         mutator(environment_payload)
         environment.write_text(json.dumps(environment_payload) + "\n")
-        plan["observation_artifacts"][0]["segments"][0]["provenance"]["manifest"][
-            "sha256"
-        ] = file_sha256(environment)
+        plan["observation_artifacts"][0]["segments"][0]["provenance"]["manifest"]["sha256"] = (
+            file_sha256(environment)
+        )
         plan_path.write_text(json.dumps(plan, indent=2) + "\n")
         result = subprocess.run(
             [

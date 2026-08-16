@@ -16,8 +16,11 @@ from vlm_faithfulness_benchmark.run_provenance import (
     M9_IMAGE_ROOT_TREE_SHA256,
     M9_POOL_MANIFEST_SHA256,
     M9_PREREG_SHA256,
+    M9_TAIL_5090_ENVIRONMENT_FINGERPRINTS,
+    M9_TAIL_RANGES,
     MANIFEST_SCHEMA,
     TAIL_CONTRACT_SCHEMA,
+    environment_class,
     file_sha256,
     gate_environment_fingerprint,
 )
@@ -205,22 +208,28 @@ def _verify_provenance_manifest(
         )
         runtime = manifest.get("runtime")
         _require(isinstance(runtime, dict), "run manifest has no runtime object")
+        runtime_environment = gate_environment_fingerprint(runtime)
         _require(
-            gate_environment_fingerprint(runtime) == M9_5090_ENVIRONMENT_FINGERPRINT,
+            runtime_environment in M9_TAIL_5090_ENVIRONMENT_FINGERPRINTS,
             "run manifest is not the registered 5090 environment",
         )
         contract_path = _verify_file_ref(plan_path, provenance["launch_contract"])
         contract = json.loads(contract_path.read_text())
         _require(isinstance(contract, dict), "tail launch contract is not an object")
         _require(contract.get("schema") == TAIL_CONTRACT_SCHEMA, "bad tail contract schema")
+        _require(contract.get("profile") == "m9-glm-tail-v1", "bad tail contract profile")
         _require(
             provenance["launch_contract"]["sha256"]
             == manifest.get("launch_contract", {}).get("sha256"),
             "run manifest does not bind the supplied tail contract",
         )
         _require(
-            contract.get("authorized_shards") == [[6154, 7577], [7577, 9000]],
+            contract.get("authorized_shards") == M9_TAIL_RANGES,
             "tail contract has wrong authorized ranges",
+        )
+        _require(
+            [start, end] in contract["authorized_shards"],
+            "segment is not authorized by tail contract",
         )
         _require(
             contract.get("generator_identity") == expected_identity, "contract identity mismatch"
@@ -238,8 +247,12 @@ def _verify_provenance_manifest(
             "tail contract binds wrong preregistration",
         )
         _require(
-            contract.get("environment_fingerprint") == M9_5090_ENVIRONMENT_FINGERPRINT,
-            "tail contract binds wrong environment",
+            contract.get("environment_fingerprint") == runtime_environment,
+            "tail contract/run manifest environment mismatch",
+        )
+        _require(
+            contract.get("runtime_class") == environment_class(runtime),
+            "tail contract/run manifest runtime class mismatch",
         )
         code = manifest.get("code")
         _require(isinstance(code, dict), "run manifest has no code object")
@@ -273,8 +286,7 @@ def _verify_provenance_manifest(
         acceptance = manifest.get("acceptance")
         _require(isinstance(acceptance, dict), "external provenance has no acceptance record")
         _require(
-            isinstance(acceptance.get("reviewed_by"), str)
-            and bool(acceptance.get("reviewed_by")),
+            isinstance(acceptance.get("reviewed_by"), str) and bool(acceptance.get("reviewed_by")),
             "external provenance has no reviewer",
         )
         _require(
@@ -348,9 +360,7 @@ def _verify_provenance_manifest(
         if start >= 9000:
             _require(manifest.get("run_id") == M9_CLOUD_RUN_ID, "wrong cloud run id")
             top_level_pins = manifest.get("installed_content_hashes")
-            _require(
-                isinstance(top_level_pins, dict), "cloud provenance has no content pins"
-            )
+            _require(isinstance(top_level_pins, dict), "cloud provenance has no content pins")
             for field, expected in M9_CLOUD_CONTENT_PINS.items():
                 _require(
                     top_level_pins.get(field) == expected,
@@ -552,10 +562,15 @@ def main() -> None:
             label = f"{obs_path.name}[{start},{end})"
             segment_counts[label] = 0
             provenance = segment["provenance"]
-            if (start, end) in {(6154, 7577), (7577, 9000)}:
+            if [start, end] in M9_TAIL_RANGES:
                 _require(
                     provenance["mode"] == "in-row",
                     ("new GLM tail segments require in-row run provenance"),
+                )
+            else:
+                _require(
+                    provenance["mode"] == "external",
+                    "only new GLM tail segments may use in-row run provenance",
                 )
             _verify_provenance_manifest(
                 args.plan,

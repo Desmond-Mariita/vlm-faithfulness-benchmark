@@ -102,6 +102,37 @@ def test_tail_contract_rejects_unregistered_environment_before_artifact_access(
         )
 
 
+def test_replacement_5090_environment_is_explicitly_authorized_for_tail() -> None:
+    """The recovered host is a second finite pin, not a wildcard GPU allowance."""
+    assert run_provenance.M9_TAIL_5090_ENVIRONMENT_FINGERPRINTS == {
+        run_provenance.M9_5090_ENVIRONMENT_FINGERPRINT,
+        "fde8af0f15b4f15ad49592aa3bc574ff7c4b4fde0b07733a6817ce75d6c3d24a",
+    }
+
+
+def test_cal50_gate_rejects_modified_wilson_evidence() -> None:
+    """The recorded confidence interval is recomputed from the bound counts."""
+    gate = {
+        "prereg": "prereg-m9-v1",
+        "cal50_sha256": run_provenance.M9_CAL50_SHA256,
+        "identity": "identity",
+        "environment_fingerprint": "environment",
+        "n": 50,
+        "parsed": 50,
+        "parseability": 1.0,
+        "agree": 40,
+        "agreement": 0.8,
+        "agreement_wilson95": [0.0, 1.0],
+        "passed": True,
+    }
+    with pytest.raises(RuntimeError, match="gate Wilson interval"):
+        run_provenance._verify_m9_cal50_gate(
+            gate,
+            generator_identity="identity",
+            environment_fingerprint="environment",
+        )
+
+
 def test_reviewed_git_content_rejects_untracked_runtime_file(tmp_path: Path) -> None:
     """An untracked adapter cannot silently enter a reviewed source tree."""
     root = tmp_path / "project"
@@ -179,8 +210,16 @@ def test_acceptance_contract_allows_registered_3090_probe(
     gate.write_text(
         json.dumps(
             {
+                "prereg": "prereg-m9-v1",
+                "cal50_sha256": run_provenance.M9_CAL50_SHA256,
                 "passed": True,
                 "identity": "identity",
+                "n": 50,
+                "parsed": 50,
+                "parseability": 1.0,
+                "agree": 40,
+                "agreement": 0.8,
+                "agreement_wilson95": [0.6696, 0.8876],
                 "environment_fingerprint": environment,
             }
         )

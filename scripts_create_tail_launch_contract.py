@@ -11,15 +11,17 @@ import tempfile
 from pathlib import Path
 
 from vlm_faithfulness_benchmark.run_provenance import (
-    M9_5090_ENVIRONMENT_FINGERPRINT,
+    M9_CAL50_SHA256,
     M9_GLM_IDENTITY,
     M9_IMAGE_ROOT_TREE_SHA256,
     M9_POOL_MANIFEST_SHA256,
     M9_PREREG_SHA256,
     M9_S02_SHA256,
+    M9_TAIL_5090_ENVIRONMENT_FINGERPRINTS,
     M9_TAIL_RANGES,
     TAIL_CONTRACT_SCHEMA,
     capture_runtime,
+    environment_class,
     file_sha256,
     gate_environment_fingerprint,
     tree_sha256,
@@ -75,10 +77,13 @@ def main() -> None:
     runtime = capture_runtime()
     environment_fingerprint = gate_environment_fingerprint(runtime)
     _require(
-        environment_fingerprint == M9_5090_ENVIRONMENT_FINGERPRINT,
+        environment_fingerprint in M9_TAIL_5090_ENVIRONMENT_FINGERPRINTS,
         "runtime is not the approved rented-5090 environment class",
     )
     gate = json.loads(args.gate.read_text())
+    _require(gate.get("prereg") == "prereg-m9-v1", "gate has wrong preregistration")
+    _require(gate.get("cal50_sha256") == M9_CAL50_SHA256, "gate has wrong CAL-50 slice")
+    _require(gate.get("n") == 50, "gate has wrong sample size")
     _require(gate.get("passed") is True, "CAL-50 gate did not pass")
     _require(
         gate.get("environment_fingerprint") == environment_fingerprint,
@@ -119,19 +124,7 @@ def main() -> None:
         "gate_sha256": file_sha256(args.gate),
         "s02_ledger_sha256": file_sha256(args.s02),
         "image_root_tree_sha256": image_root_tree_sha256,
-        "runtime_class": {
-            "platform": runtime["platform"],
-            "python": runtime["python"],
-            "numpy": runtime["numpy"],
-            "pillow": runtime["pillow"],
-            "torch": runtime["torch"],
-            "torch_cuda": runtime["torch_cuda"],
-            "cudnn": runtime["cudnn"],
-            "transformers": runtime["transformers"],
-            "gpu_name": runtime["gpu"]["name"],
-            "compute_capability": runtime["gpu"]["compute_capability"],
-            "driver": runtime["gpu"]["driver"],
-        },
+        "runtime_class": environment_class(runtime),
     }
     encoded = (json.dumps(contract, indent=2, sort_keys=True) + "\n").encode()
     _write_new(args.output, encoded)

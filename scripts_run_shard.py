@@ -225,6 +225,7 @@ def run_calibration_gate(
     lo, hi = wilson_interval(agree, parsed) if parsed else (0.0, 0.0)
     result = {
         "prereg": "prereg-m9-v1",
+        "cal50_sha256": gate["cal50_sha256"],
         "identity": gen.identity().key(),  # type: ignore[attr-defined]
         "n": n,
         "parsed": parsed,

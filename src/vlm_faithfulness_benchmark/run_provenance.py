@@ -22,6 +22,7 @@ __all__ = [
     "MANIFEST_SCHEMA",
     "TAIL_CONTRACT_SCHEMA",
     "capture_runtime",
+    "environment_class",
     "gate_environment_fingerprint",
     "file_sha256",
     "load_and_verify_tail_contract",
@@ -42,6 +43,13 @@ M9_PREREG_SHA256 = "a4e04011e22990c2d540c8e7b935c7ee0036b66925b0f1856a2683507a4a
 M9_CAL50_SHA256 = "c0c104f237bf1e24539a2fd2a0a491f3da79ba0d17d6fe5a2d70423729bdcc46"
 M9_IMAGE_ROOT_TREE_SHA256 = "035b7165c6e4892c2df61f0b4bdb8eafa22d1d2a590d8ce1c2de4ed062362a84"
 M9_5090_ENVIRONMENT_FINGERPRINT = "a2836dd9bd44cbb5e211008eb9a97125d7f6d71cbe2e7dd4edb943197317b539"
+M9_TAIL_5090_ENVIRONMENT_FINGERPRINTS = {
+    M9_5090_ENVIRONMENT_FINGERPRINT,
+    # Replacement host after the original provider became repeatedly unavailable:
+    # Python 3.12.3, torch 2.12.0+cu130, transformers 5.15.0, CUDA 13.0,
+    # cuDNN 92000, driver 580.126.09, RTX 5090 compute capability 12.0.
+    "fde8af0f15b4f15ad49592aa3bc574ff7c4b4fde0b07733a6817ce75d6c3d24a",
+}
 M9_GLM_IDENTITY = (
     '{"decoding":"greedy;beams=1;max_new_tokens=256;enable_thinking=False",'
     '"dtype":"bfloat16","extraction_contract":"aokvqa-mc-glm-v2",'
@@ -153,10 +161,17 @@ def gate_environment_fingerprint(runtime: Mapping[str, Any] | None = None) -> st
     deliberately excluded so identical GPUs on one rented host share one gate.
     Exact per-process/physical-GPU provenance remains in each run manifest.
     """
-    observed = dict(runtime if runtime is not None else capture_runtime())
+    environment = environment_class(runtime if runtime is not None else capture_runtime())
+    encoded = json.dumps(environment, sort_keys=True, separators=(",", ":")).encode()
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def environment_class(runtime: Mapping[str, Any]) -> dict[str, Any]:
+    """Flatten the runtime fields that define a CAL-50 environment class."""
+    observed = dict(runtime)
     gpu = observed["gpu"]
     _require(isinstance(gpu, Mapping), "runtime has no GPU provenance object")
-    environment = {
+    return {
         "platform": observed["platform"],
         "python": observed["python"],
         "numpy": observed["numpy"],
@@ -169,8 +184,38 @@ def gate_environment_fingerprint(runtime: Mapping[str, Any] | None = None) -> st
         "compute_capability": gpu["compute_capability"],
         "driver": gpu["driver"],
     }
-    encoded = json.dumps(environment, sort_keys=True, separators=(",", ":")).encode()
-    return hashlib.sha256(encoded).hexdigest()
+
+
+def _verify_m9_cal50_gate(
+    gate: Mapping[str, Any], *, generator_identity: str, environment_fingerprint: str
+) -> None:
+    """Verify that a gate artifact records the fixed preregistered CAL-50 test."""
+    _require_equal(gate.get("prereg"), "prereg-m9-v1", "gate preregistration")
+    _require_equal(gate.get("cal50_sha256"), M9_CAL50_SHA256, "gate CAL-50 slice")
+    _require_equal(gate.get("identity"), generator_identity, "gate identity")
+    _require_equal(gate.get("environment_fingerprint"), environment_fingerprint, "gate environment")
+    _require_equal(gate.get("n"), 50, "gate sample size")
+    parsed = gate.get("parsed")
+    agree = gate.get("agree")
+    _require(isinstance(parsed, int) and 0 <= parsed <= 50, "invalid gate parsed count")
+    _require(isinstance(agree, int) and 0 <= agree <= parsed, "invalid gate agreement count")
+    parseability = round(parsed / 50, 4)
+    agreement = round(agree / parsed, 4) if parsed else 0.0
+    if parsed:
+        z = 1.96
+        p = agree / parsed
+        denominator = 1 + z * z / parsed
+        center = (p + z * z / (2 * parsed)) / denominator
+        half = (z * (p * (1 - p) / parsed + z * z / (4 * parsed * parsed)) ** 0.5) / denominator
+        wilson95 = [round(max(0.0, center - half), 4), round(min(1.0, center + half), 4)]
+    else:
+        wilson95 = [0.0, 0.0]
+    _require_equal(gate.get("parseability"), parseability, "gate parseability")
+    _require_equal(gate.get("agreement"), agreement, "gate agreement")
+    _require_equal(gate.get("agreement_wilson95"), wilson95, "gate Wilson interval")
+    expected_passed = parseability >= 0.90 and agreement >= 0.60
+    _require_equal(gate.get("passed"), expected_passed, "gate pass decision")
+    _require(expected_passed, "contract gate did not pass")
 
 
 def _require_equal(actual: object, expected: object, label: str) -> None:
@@ -257,13 +302,15 @@ def load_and_verify_tail_contract(
             [shard_start, shard_end] in M9_TAIL_RANGES,
             "shard is not an authorized tail range",
         )
-        expected_environment = M9_5090_ENVIRONMENT_FINGERPRINT
+        expected_environment = contract.get("environment_fingerprint")
+        _require(
+            expected_environment in M9_TAIL_5090_ENVIRONMENT_FINGERPRINTS,
+            "tail contract is not bound to an approved 5090 environment",
+        )
         environment_label = "approved 5090 environment"
     elif profile == "m9-glm-repro-acceptance-v1":
         _require_equal(contract.get("schema"), ACCEPTANCE_CONTRACT_SCHEMA, "contract.schema")
-        _require_equal(
-            contract.get("authorized_shards"), M9_ACCEPTANCE_RANGES, "authorized shards"
-        )
+        _require_equal(contract.get("authorized_shards"), M9_ACCEPTANCE_RANGES, "authorized shards")
         _require(
             [shard_start, shard_end] in M9_ACCEPTANCE_RANGES,
             "shard is not the registered CAL-50 acceptance range",
@@ -297,16 +344,24 @@ def load_and_verify_tail_contract(
         "registered pool manifest",
     )
     _require_equal(contract.get("prereg_sha256"), M9_PREREG_SHA256, "registered prereg")
-    _require_equal(
-        contract.get("environment_fingerprint"), expected_environment, environment_label
-    )
+    _require_equal(contract.get("environment_fingerprint"), expected_environment, environment_label)
     verify_reviewed_git_content(project_root, code_commit)
     gate = json.loads(gate_path.read_text())
-    _require_equal(gate.get("identity"), generator_identity, "gate identity")
-    _require(gate.get("passed") is True, "contract gate did not pass")
-    live_environment = gate_environment_fingerprint()
-    _require_equal(gate.get("environment_fingerprint"), expected_environment, "gate environment")
+    _require(isinstance(gate, Mapping), "gate artifact must be an object")
+    live_runtime = capture_runtime()
+    live_environment = gate_environment_fingerprint(live_runtime)
+    _verify_m9_cal50_gate(
+        gate,
+        generator_identity=generator_identity,
+        environment_fingerprint=str(expected_environment),
+    )
     _require_equal(live_environment, expected_environment, "live environment")
+    if profile == "m9-glm-tail-v1":
+        _require_equal(
+            contract.get("runtime_class"),
+            environment_class(live_runtime),
+            "runtime class",
+        )
     live = {
         "driver_sha256": file_sha256(project_root / "scripts_run_shard.py"),
         "source_tree_sha256": tree_sha256(project_root / "src"),

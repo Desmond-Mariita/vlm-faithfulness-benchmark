@@ -112,6 +112,46 @@ def test_tail_manifest_rejects_cross_paired_approved_environment(
             file_sha256(observation),
         )
 
+    contract_payload = json.loads(contract.read_text())
+    contract_payload["environment_fingerprint"] = runtime_environment
+    contract_payload["runtime_class"]["driver"] = "580-b"
+    contract.write_text(json.dumps(contract_payload))
+    manifest_payload = json.loads(manifest.read_text())
+    manifest_payload["launch_contract"]["sha256"] = file_sha256(contract)
+    manifest.write_text(json.dumps(manifest_payload))
+    provenance["launch_contract"]["sha256"] = file_sha256(contract)
+    provenance["manifest"]["sha256"] = file_sha256(manifest)
+    provenance["run_provenance_digest"] = file_sha256(manifest)
+    with pytest.raises(RuntimeError, match="contract/run manifest runtime class mismatch"):
+        merge_validator._verify_provenance_manifest(
+            plan,
+            provenance,
+            6154,
+            7577,
+            identity,
+            observation,
+            file_sha256(observation),
+        )
+
+    contract_payload["runtime_class"] = run_provenance.environment_class(runtime)
+    contract.write_text(json.dumps(contract_payload))
+    manifest_payload["shard"].update({"start": 9000, "end": 13600})
+    manifest_payload["launch_contract"]["sha256"] = file_sha256(contract)
+    manifest.write_text(json.dumps(manifest_payload))
+    provenance["launch_contract"]["sha256"] = file_sha256(contract)
+    provenance["manifest"]["sha256"] = file_sha256(manifest)
+    provenance["run_provenance_digest"] = file_sha256(manifest)
+    with pytest.raises(RuntimeError, match="segment is not authorized by tail contract"):
+        merge_validator._verify_provenance_manifest(
+            plan,
+            provenance,
+            9000,
+            13600,
+            identity,
+            observation,
+            file_sha256(observation),
+        )
+
 
 def test_merge_validator_accepts_legacy_sidecar_and_in_row_provenance(tmp_path: Path) -> None:
     """A two-segment lane must validate every required binding exactly once."""

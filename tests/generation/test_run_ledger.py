@@ -29,7 +29,7 @@ def test_double_commit_is_conformance_error(tmp_path: Path) -> None:
     """R2/R5: re-producing a committed record halts loudly."""
     ledger = RunLedger(tmp_path / "run.jsonl")
     ledger.commit("k", {"v": 1})
-    with pytest.raises(AssertionError, match="second commit"):
+    with pytest.raises(RuntimeError, match="second commit"):
         ledger.commit("k", {"v": 2})
     ledger.close()
 
@@ -41,7 +41,7 @@ def test_double_commit_rejected_across_resume(tmp_path: Path) -> None:
     first.commit("k", {"v": 1})
     first.close()
     resumed = RunLedger(path)
-    with pytest.raises(AssertionError, match="second commit"):
+    with pytest.raises(RuntimeError, match="second commit"):
         resumed.commit("k", {"v": 2})
     resumed.close()
 

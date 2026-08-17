@@ -1,0 +1,69 @@
+{
+  "schema": "vlm-faithfulness-m9-glm-s12-s15-completion-v1",
+  "status": "PASS",
+  "completed_date": "2026-08-17",
+  "maintainer_approval": "Desmond Mariita",
+  "implementation": {
+    "reviewed_commit": "db6196850392ebb62f7903184227b2e9f35d973f",
+    "accepted_contract_commit": "8db235a1e009ca3fbbd5393654380f9b534bdbcf",
+    "github_actions_run": 32004931110,
+    "github_actions_conclusion": "success",
+    "review_reconciliation_commit": "e57591c"
+  },
+  "contract": {
+    "id": "m9-glm-s12-s15-v1",
+    "status": "accepted",
+    "sha256": "bf089675ed47574e99a1a0bc56b9a71f9ae75934cf0982464dbbf1db16a3c17a"
+  },
+  "inputs": {
+    "canonical_s02_sha256": "e2f35a869cc874504c4942f30804048ac40de59caaafe8f2c7528262b066408e",
+    "merged_observations_sha256": "861f33b4e4b5cec34ef82c414232c45caf3b717e1fefc73e6003c4f6c4884ede",
+    "merge_validation_report_sha256": "67ede40a6fde03a8def41bbe9c00a3defeb211eaed07738fdc64d02737c4f9e5",
+    "calibration_lock_sha256": "1ed9dae3c61503bac6f78a0329123bb7ee33be22b32bf40c2943d42cb3110c3a",
+    "legacy_sidecar_sha256": "e834f8f8f815b34cb94628197353ca0d0fa53774150b27edbc0650ad5e8947ac",
+    "legacy_manifest_sha256": "62e6f7cbf475e9b8f75ff1b8ff39e49ef38429c3e8e2d5eb2c832528783e44e3"
+  },
+  "resolution": {
+    "records": 18194,
+    "labelled": 13594,
+    "routed": 4600,
+    "counts": {
+      "E1": 10,
+      "E2": 6,
+      "E5": 1079,
+      "E6": 3505,
+      "S1": 12321,
+      "S2": 719,
+      "S3": 554
+    }
+  },
+  "bundle": {
+    "local_path": "/home/envy/Documents/vlm-faithfulness/runs/release-evidence/m9-glm-adjudicated/bf089675ed47574e99a1a0bc56b9a71f9ae75934cf0982464dbbf1db16a3c17a",
+    "b2_prefix": "manyee/runs/glm-adjudicated/bf089675ed47574e99a1a0bc56b9a71f9ae75934cf0982464dbbf1db16a3c17a",
+    "files": {
+      "manifest.json": {
+        "bytes": 997,
+        "sha256": "6dfb9465fad038d9132b0818c44ee71fa134a39cc5259996006ac65f9d484797"
+      },
+      "sealed-provenance.jsonl": {
+        "bytes": 68807024,
+        "records": 18194,
+        "sha256": "c8efd4bbe1e280bd876fcfed85bb01bb80150c7a44a6c536b3ee5dc32dddfe23"
+      },
+      "summary.json": {
+        "bytes": 403,
+        "sha256": "04674b6e20e9b14d866401cbfbe4bd3cd060a7f74f1ebacbf321c6428116723c"
+      }
+    }
+  },
+  "verification": {
+    "local_manifest_checked": true,
+    "local_line_count_checked": true,
+    "b2_copy_mode": "content-addressed immutable no-overwrite",
+    "b2_file_set_checked": true,
+    "b2_streamed_sha256_checked": true,
+    "b2_files": 3,
+    "b2_bytes": 68808424
+  },
+  "next_required_stage": "S16 Corpus Entry assembly and split assignment"
+}

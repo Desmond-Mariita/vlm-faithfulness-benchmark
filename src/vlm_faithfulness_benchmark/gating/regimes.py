@@ -65,7 +65,7 @@ def _occlude(image: Image, rng: np.random.Generator) -> Image:
     ``_OCCLUDE_FRACTION``), matching the legacy battery's coverage while
     remaining fully determined by the stream.
     """
-    out = image.copy()
+    out: Image = image.copy()
     cell = 16
     h, w = image.shape[:2]
     mask_rows = (h + cell - 1) // cell
@@ -110,18 +110,23 @@ def apply_regime(
         "partner_image is required for wrong-image and forbidden otherwise"
     )
     if regime == "real":
-        return image.copy()
+        out: Image = image.copy()
+        return out
     if regime == "grey":
-        return np.full_like(image, _GREY_VALUE)
+        out = np.full_like(image, _GREY_VALUE)
+        return out
     if regime == "wrong-image":
         assert partner_image is not None
-        return partner_image.copy()
+        out = partner_image.copy()
+        return out
     if regime == "occlude":
         return _occlude(image, np.random.default_rng(record_index))
     if regime == "noise":
         rng = np.random.default_rng(1_000_000 + record_index)
         # LaTeX: x' = clip(x + \epsilon, 0, 255), \epsilon ~ N(0, \sigma^2), \sigma = 80
         noise = rng.normal(0.0, _NOISE_SIGMA, size=image.shape)
-        return np.clip(image.astype(np.float64) + noise, 0, 255).astype(np.uint8)
+        out = np.clip(image.astype(np.float64) + noise, 0, 255).astype(np.uint8)
+        return out
     # hflip: horizontal mirror (semantics-preserving negative control).
-    return image[:, ::-1, :].copy()
+    out = image[:, ::-1, :].copy()
+    return out

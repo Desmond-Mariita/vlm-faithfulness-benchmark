@@ -1,0 +1,71 @@
+{
+  "schema": "vlm-faithfulness-m9-s16-gate-disposition-v1",
+  "recorded_at_utc": "2026-08-17T07:46:18Z",
+  "status": "production-s16-not-authorized",
+  "scope": "M9 S16 corpus assembly and split-assignment readiness",
+  "decision": {
+    "run_production_s16_now": false,
+    "glm_only_split_is_conformant_s16": false,
+    "glm_bundle_status": "complete S16 input component only",
+    "consensus": "approve-after-fixes"
+  },
+  "blocking_conditions": [
+    "N6.6 and N7.1 conflict for every CAL-50-touched held-out family and require specification authority",
+    "Qwen does not yet have an accepted S12-S15 sealed resolution",
+    "DeepSeek has only 724 of 18194 observations and no sealed resolution",
+    "corpus-wide split, qtype, scene, hard-core, held-out-family, and OOD-Dataset contracts are not frozen"
+  ],
+  "minimum_next_sequence": [
+    "review and accept reconstructed Qwen run provenance",
+    "execute reviewed deterministic Qwen S12-S15 sealing",
+    "complete or formally substitute/defer the held-out generator-family lane",
+    "obtain BM/specification decisions for N6.6 x N7.1 and all S16-owned pins",
+    "only then execute corpus-wide S16"
+  ],
+  "review_evidence": {
+    "align_commit": "f43dd7ae694a79e8dec101bce59266e394014716",
+    "input_sha256": "4ee00b8a721fc3c43884f944b344537cbdb613b9e0710ad03024ee390f456207",
+    "reports": [
+      {
+        "reviewer": "DeepSeek v4 Flash",
+        "verdict": "ACCEPT-AFTER-FIXES",
+        "sha256": "b83a8b8308b5eebe82f99a4ae6b7b397aae48089fa134268cc2227d6f3652cc5"
+      },
+      {
+        "reviewer": "DeepSeek v4 Pro",
+        "verdict": "ACCEPT-DISPOSITION",
+        "sha256": "839b2f9b514b61e8d0d43b5cfb0bd011beb68adfe3b5f96336ad293d7b6e72f3"
+      },
+      {
+        "reviewer": "Gemini 2.5 Pro",
+        "verdict": "ACCEPT-DISPOSITION",
+        "sha256": "aff5a3368f8764e7f398aab7a6521bc420d2516ee779f0f1d233bbf771ca0f2a"
+      },
+      {
+        "reviewer": "Kimi K2.6",
+        "verdict": "ACCEPT-DISPOSITION",
+        "sha256": "a17fec79a3c7b934ad45e4d7e5e11209ed0663167badd279198de05953f07ae1"
+      },
+      {
+        "reviewer": "Codex Luna",
+        "verdict": "ACCEPT-AFTER-FIXES",
+        "sha256": "a3a2195ba9e170d28bc29fb8c4a39171c6f24b21f538245fceaa934468889590"
+      }
+    ],
+    "reconciled_sha256": "355aef5aa31f3b3f5b33bf1a9310119e05a4e595e6a2f2611f2435bf12fdc11f"
+  },
+  "authority_boundary": {
+    "bm_specification": [
+      "N6.6 x N7.1 resolution and calibration-quarantine semantics",
+      "held-out generator family",
+      "scene identity and qtype mapping",
+      "split and hard-core contracts",
+      "OOD-Dataset limitation classification"
+    ],
+    "ordinary_implementation_review": [
+      "Qwen provenance reconstruction",
+      "Qwen deterministic S12-S15 sealing",
+      "implementation of later frozen S16 contracts"
+    ]
+  }
+}

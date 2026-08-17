@@ -1,0 +1,109 @@
+{
+  "schema": "vlm-faithfulness-m9-s16-readiness-audit-v1",
+  "status": "BLOCKED_BEFORE_S16",
+  "recorded_at_utc": "2026-08-17T02:24:37Z",
+  "reviewer": "Desmond Mariita",
+  "conclusion": {
+    "glm_observation_merge_complete": true,
+    "additional_gpu_generation_required": false,
+    "s16_ready": false,
+    "next_required_stage": "Deterministic offline S12-S15 adjudication and provenance sealing"
+  },
+  "input_bindings": {
+    "merged_observation_ledger": {
+      "rows": 18194,
+      "unique_instance_keys": 18194,
+      "sha256": "861f33b4e4b5cec34ef82c414232c45caf3b717e1fefc73e6003c4f6c4884ede"
+    },
+    "canonical_s02": {
+      "rows": 18194,
+      "unique_instance_keys": 18194,
+      "instance_key_set_matches_observations": true,
+      "sha256": "e2f35a869cc874504c4942f30804048ac40de59caaafe8f2c7528262b066408e"
+    },
+    "merge_plan": {
+      "sha256": "2c07e8703eb0e0d551986a0ecd5dc67b2c31d3cdf0fea7bdf8e84bdc7262877a"
+    }
+  },
+  "observation_inventory": {
+    "preexisting_routes": {
+      "E1": 10,
+      "E2": 6
+    },
+    "p1_p2_p3_pass": 18178,
+    "condition_a_at_k_3": {
+      "false": 13502,
+      "true": 4676,
+      "indeterminate": 0
+    },
+    "condition_a_true_saliency_at_floor_0_625": {
+      "below_floor_routes_E5": 1079,
+      "at_floor_remains_locatable": 324,
+      "above_floor_remains_locatable": 3273
+    },
+    "resolution_field_presence": {
+      "condition_a": 0,
+      "condition_b": 0,
+      "behavioural_state": 0,
+      "label": 0,
+      "reason_code": 0,
+      "sealed_interventional_provenance": 0
+    },
+    "provenance_binding": {
+      "in_row_baseline_digest": 14141,
+      "legacy_sidecar_baseline_digest": 4053,
+      "in_row_run_provenance": 2846,
+      "external_run_provenance": 15348
+    }
+  },
+  "calibration_authority": {
+    "condition_b_instrument": {
+      "id": "jaccard-content-v1",
+      "stopwords_sha256": "cc8737d5b5eb3580026695487b43b0e38a786193a93fe5600e27c253cdec7860"
+    },
+    "theta_b": {
+      "value": 0.7558573853989813,
+      "result_sha256": "4fc67b57d3c11be00eb7ae73323c793c61f6883bc0918eb6654afbe341668faa",
+      "verdict": "VIABLE"
+    },
+    "condition_a_k": {
+      "value": 3,
+      "prereg_v3_sha256": "e94d82403309a6948dfe7ff5119fb25f9c17b77ccf018b13db9e410f508b7879",
+      "rule": "negative-control specificity"
+    },
+    "flat_saliency_floor": {
+      "value": 0.625,
+      "comparison": "max_drop < floor routes E5; equality remains locatable",
+      "fresh_calibration_rows": 100,
+      "fresh_calibration_values": 100,
+      "fresh_confirm_observations_sha256": "91a2e4b5d25238604219c5ed1fcb0245f2e375bfdf1fe9cd7e54310200374225",
+      "independent_original_pilot_value": 0.625,
+      "original_pilot_observations_sha256": "a0772491c1a88c308459ba95bb34ae79f0cc672c96e5c73590d817061a742466"
+    },
+    "superseded_artifact": {
+      "path": "data/runs/k_calibration_result.json",
+      "sha256": "706d995840c970ee544b62ac7de3d8bf6d0ba4167487770da8fc977386a0dc12",
+      "recorded_k": 2,
+      "disposition": "descriptive only; MUST NOT be consumed for production labeling"
+    }
+  },
+  "implementation_gaps": [
+    "No production orchestrator currently consumes the merged S04-S11 observation ledger and emits exactly-once S14/S15 sealed resolutions.",
+    "gating/condition_b.py still implements the superseded BERTScore instrument; production adjudication must implement jaccard-content-v1.",
+    "gating/calibration.py still loads prereg-v1 and implements the superseded human-agreement k selector; production adjudication must consume pinned final values rather than reselect them.",
+    "The reproducible 0.625 saliency floor must be materialized in an immutable calibration lock before mass adjudication."
+  ],
+  "required_next_outputs": [
+    "Immutable calibration lock binding k=3, theta_B, jaccard-content-v1, stopwords, and saliency floor 0.625 to exact source hashes",
+    "Fail-closed offline S12-S15 adjudicator with route precedence, projection, and sealing tests",
+    "A 18194-row exactly-once resolution ledger partitioned into labelled candidates XOR E1-E6 routed-aside records",
+    "Validation report proving totality, reconstructability, deterministic rerun equality, and no input mutation"
+  ],
+  "corrected_stage_order": [
+    "S12-S15 offline adjudication and sealing",
+    "S16 Corpus Entry assembly and split assignment",
+    "S17 Routed-Aside Set construction and resolution-totality verification",
+    "S18 corpus freeze and manifest generation",
+    "S19 separated release views and boundary verification"
+  ]
+}

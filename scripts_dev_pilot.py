@@ -14,8 +14,8 @@ from vlm_faithfulness_benchmark.gating.gates import load_pattern_registry
 from vlm_faithfulness_benchmark.gating.pilot import PilotIO, run_pilot_observation
 from vlm_faithfulness_benchmark.gating.regimes import wrong_image_partner_index
 from vlm_faithfulness_benchmark.generation.harness import run_s02
-from vlm_faithfulness_benchmark.generation.qwen_generator import QwenGenerator
 from vlm_faithfulness_benchmark.generation.identity import InstanceId
+from vlm_faithfulness_benchmark.generation.qwen_generator import QwenGenerator
 from vlm_faithfulness_benchmark.ingestion.aokvqa import SourceRecord, normalize_aokvqa
 from vlm_faithfulness_benchmark.run_ledger import RunLedger
 
@@ -26,6 +26,7 @@ PILOT_N = 500
 
 
 def log(msg: str) -> None:
+    """Append one timestamped progress message to stdout and the run log."""
     line = f"{time.strftime('%H:%M:%S')} {msg}"
     print(line, flush=True)
     LOG.parent.mkdir(parents=True, exist_ok=True)
@@ -46,7 +47,9 @@ for r in raw:
 assert len(records) == PILOT_N
 position = {rec.identity.record_id: i for i, rec in enumerate(records)}
 
+
 def image_path(rec: SourceRecord) -> Path:
+    """Resolve the downloaded COCO image path for one source record."""
     return IMG_DIR / f"{int(rec.image_ref.removeprefix('coco/')):012d}.jpg"
 
 missing = [r for r in records if not image_path(r).exists()]
@@ -69,9 +72,12 @@ s02_payloads = {k.removesuffix("::output_tuple"): s02_ledger.payload(k)
 
 # --- phase 2: observation ---
 def load_image(rec: SourceRecord) -> np.ndarray:
+    """Load one source image as an RGB uint8 array."""
     return np.asarray(PILImage.open(image_path(rec)).convert("RGB"), dtype=np.uint8)
 
+
 def load_partner(rec: SourceRecord) -> np.ndarray:
+    """Load the deterministic wrong-image partner for one record."""
     partner = records[wrong_image_partner_index(position[rec.identity.record_id], PILOT_N)]
     return load_image(partner)
 
@@ -90,7 +96,10 @@ io = PilotIO(
 obs_ledger = RunLedger(ROOT / "data/runs/pilot-obs.jsonl")
 t1 = time.time()
 done = [0]
+
+
 def progress(m: str) -> None:
+    """Log every tenth newly committed observation."""
     done[0] += 1
     if done[0] % 10 == 0:
         rate = (time.time() - t1) / done[0]
@@ -100,5 +109,6 @@ r2 = run_pilot_observation(
     on_progress=progress,
 )
 log(f"phase2 obs: {r2} in {(time.time()-t1)/3600:.2f}h")
-s02_ledger.close(); obs_ledger.close()
+s02_ledger.close()
+obs_ledger.close()
 log("PILOT OBSERVATION COMPLETE")

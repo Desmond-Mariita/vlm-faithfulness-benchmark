@@ -65,7 +65,7 @@ def _paste_with_feather(
     residual as RIP §2.4 pins.
     """
     top, left, bottom, right = box
-    out = image.copy()
+    out: Image = image.copy()
     region = patch.astype(np.float64)
     background = out[top:bottom, left:right].astype(np.float64)
     h, w = region.shape[:2]
@@ -284,7 +284,7 @@ def apply_multipatch_control_edit(
         The control-edited image; the evidence region is untouched.
     """
     rng = np.random.default_rng(3_000_000 + record_index)
-    out = image.copy()
+    out: Image = image.copy()
     for box in control_patches(region, image.shape[0], image.shape[1]):
         top, left, bottom, right = box
         donor = _donor_crop(partner_image, box)

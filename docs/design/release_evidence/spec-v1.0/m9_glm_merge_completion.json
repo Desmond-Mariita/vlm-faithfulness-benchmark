@@ -1,0 +1,90 @@
+{
+  "schema": "vlm-faithfulness-m9-glm-merge-completion-v1",
+  "status": "PASS",
+  "recorded_at_utc": "2026-08-17T02:14:24Z",
+  "reviewer": "Desmond Mariita",
+  "records": 18194,
+  "unique_positions": 18194,
+  "canonical_s02_sha256": "e2f35a869cc874504c4942f30804048ac40de59caaafe8f2c7528262b066408e",
+  "artifacts": {
+    "merge_plan": {
+      "path_in_b2_bundle": "runs/release-evidence/m9-glm-merge-plan.json",
+      "sha256": "2c07e8703eb0e0d551986a0ecd5dc67b2c31d3cdf0fea7bdf8e84bdc7262877a"
+    },
+    "merged_observation_ledger": {
+      "path_in_b2_bundle": "runs/release-evidence/m9-glm-merged/obs-glm-00000-18194.merged.jsonl",
+      "rows": 18194,
+      "bytes": 35771094,
+      "sha256": "861f33b4e4b5cec34ef82c414232c45caf3b717e1fefc73e6003c4f6c4884ede"
+    },
+    "validation_report": {
+      "path_in_b2_bundle": "runs/release-evidence/m9-glm-merged/validation-report.json",
+      "bytes": 6516,
+      "sha256": "67ede40a6fde03a8def41bbe9c00a3defeb211eaed07738fdc64d02737c4f9e5"
+    },
+    "input_checksums": {
+      "path_in_b2_bundle": "runs/release-evidence/m9-glm-merge-inputs.sha256",
+      "sha256": "3d79478e79c40b4792f1af6a0d792482205788e501f591bb2715ef6a949b7cb1"
+    },
+    "output_checksums": {
+      "path_in_b2_bundle": "runs/release-evidence/m9-glm-merge-outputs.sha256",
+      "sha256": "dbf5c85997c9b4f57f06375620401b52050cb2383675f9ac23bd3ba48e9b8cfd"
+    }
+  },
+  "segment_counts": [
+    {
+      "start": 0,
+      "end": 3969,
+      "rows": 3969
+    },
+    {
+      "start": 3969,
+      "end": 4053,
+      "rows": 84
+    },
+    {
+      "start": 4053,
+      "end": 6154,
+      "rows": 2101
+    },
+    {
+      "start": 6154,
+      "end": 7577,
+      "rows": 1423
+    },
+    {
+      "start": 7577,
+      "end": 9000,
+      "rows": 1423
+    },
+    {
+      "start": 9000,
+      "end": 13600,
+      "rows": 4600
+    },
+    {
+      "start": 13600,
+      "end": 18194,
+      "rows": 4594
+    }
+  ],
+  "backup": {
+    "provider": "Backblaze B2",
+    "bucket": "manyee",
+    "prefix": "runs/glm-merge-inputs/2c07e8703eb0e0d551986a0ecd5dc67b2c31d3cdf0fea7bdf8e84bdc7262877a/workspace/",
+    "objects": 19,
+    "bytes": 99900315,
+    "download_sha256_verified": true
+  },
+  "claim_boundary": {
+    "merge_complete": true,
+    "released_corpus_complete": false,
+    "next_stages": [
+      "S12-S15 offline adjudication and provenance sealing",
+      "S16 Corpus Entry assembly and split assignment",
+      "S17 Routed-Aside Set construction",
+      "S18 corpus freeze and manifest",
+      "S19 separated predictor-visible, hidden, and audit views"
+    ]
+  }
+}

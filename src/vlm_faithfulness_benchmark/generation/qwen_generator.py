@@ -60,6 +60,7 @@ __all__ = [
 EXTRACTION_CONTRACT_ID = "aokvqa-mc-v1.1"
 OPTION_SCORER_ID = "option-letter-logprob-v1.1"
 _MODEL_ID = "Qwen/Qwen3-VL-8B-Instruct"
+_REVISION = "0c351dd01ed87e9c1b53cbc748cba10e6187ff3b"
 _MAX_NEW_TOKENS = 160
 _RATIONALE_MARKER = "Rationale:"
 
@@ -130,16 +131,16 @@ class QwenGenerator:
         self._image_root = image_root
         # transformers' Auto* factories are untyped upstream; the boundary is
         # confined to these three calls (mypy: no-untyped-call/misc).
-        self._processor = AutoProcessor.from_pretrained(_MODEL_ID)  # type: ignore[no-untyped-call]
+        self._processor = AutoProcessor.from_pretrained(_MODEL_ID, revision=_REVISION)
         self._model = AutoModelForImageTextToText.from_pretrained(
-            _MODEL_ID, dtype=torch.bfloat16, device_map="cuda:0"
+            _MODEL_ID, revision=_REVISION, dtype=torch.bfloat16, device_map="cuda:0"
         )
-        self._model.eval()  # type: ignore[no-untyped-call]
-        revision = getattr(self._model.config, "_commit_hash", None)
-        # Review F-02: a subject without a pinned weight revision is not a
-        # complete composite identity (R3) — halt rather than record "unpinned".
-        assert revision, "R3: weight revision hash unavailable; refusing unpinned identity"
-        self._revision = str(revision)
+        self._model.eval()
+        loaded_revision = getattr(self._model.config, "_commit_hash", None)
+        assert loaded_revision == _REVISION, (
+            f"R3: requested revision {_REVISION} but loaded {loaded_revision!r}"
+        )
+        self._revision = _REVISION
 
     def scorer_generation_agreement(self, records: "list[SourceRecord]") -> float:
         """Measure scorer-vs-generation agreement on unperturbed images.
@@ -240,7 +241,7 @@ class QwenGenerator:
             return_tensors="pt",
         ).to(self._model.device)
         with self._torch.inference_mode():
-            generated = self._model.generate(  # type: ignore[misc]
+            generated = self._model.generate(
                 **inputs,
                 do_sample=False,
                 num_beams=1,
@@ -271,13 +272,14 @@ class QwenGenerator:
         import numpy as np
         from PIL import Image
 
+        pil: object
         if image_override is None:
             image_id = record.image_ref.removeprefix("coco/")
             pil = Image.open(self._image_root / f"{int(image_id):012d}.jpg").convert("RGB")
         elif isinstance(image_override, np.ndarray):
             pil = Image.fromarray(image_override)
         else:
-            pil = image_override  # type: ignore[assignment]
+            pil = image_override
         scores: list[float] = []
         prompt = build_prompt(record)
         for i in range(len(record.options)):

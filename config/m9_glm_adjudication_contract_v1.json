@@ -1,7 +1,7 @@
 {
   "schema": "vlm-faithfulness-m9-glm-adjudication-contract-v1",
   "id": "m9-glm-s12-s15-v1",
-  "status": "review-pending",
+  "status": "accepted",
   "generator_identity": "{\"decoding\":\"greedy;beams=1;max_new_tokens=256;enable_thinking=False\",\"dtype\":\"bfloat16\",\"extraction_contract\":\"aokvqa-mc-glm-v2\",\"image_preprocessing\":\"pil-rgb-native\",\"model\":\"zai-org/GLM-4.6V-Flash\",\"option_scorer\":\"option-letter-logprob-glm-v1\",\"prompt_template\":\"aokvqa-mc-glm-v2\",\"revision\":\"411bb4d77144a3f03accbf4b780f5acb8b7cde4e\"}",
   "records": 18194,
   "inputs": {

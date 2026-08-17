@@ -1,0 +1,9 @@
+{
+ "agreement_by_k": {
+  "2": 0.48,
+  "3": 0.28
+ },
+ "k_selected": 2,
+ "human_yes": 48,
+ "n": 50
+}

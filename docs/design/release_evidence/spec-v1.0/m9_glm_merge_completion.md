@@ -35,7 +35,10 @@ ledgers bound to their immutable run manifests.
 ## Claim boundary and handoff
 
 This evidence closes the raw GLM observation-lane merge. It does not claim that
-a released Corpus Entry view exists. The next controlled work is S16 Corpus
-Entry assembly and split assignment, S17 Routed-Aside Set construction, S18
-corpus freeze and manifest, and S19 separated predictor-visible, hidden, and
-audit views.
+a labelled candidate ledger or released Corpus Entry view exists. The S16
+readiness audit found that deterministic offline S12–S15 adjudication and
+provenance sealing must run first. After that stage passes, the controlled work
+continues with S16 Corpus Entry assembly and split assignment, S17 Routed-Aside
+Set construction, S18 corpus freeze and manifest, and S19 separated
+predictor-visible, hidden, and audit views. See
+`m9_s16_readiness_audit.{md,json}` for the corrected handoff.

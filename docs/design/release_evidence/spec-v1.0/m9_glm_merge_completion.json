@@ -80,6 +80,7 @@
     "merge_complete": true,
     "released_corpus_complete": false,
     "next_stages": [
+      "S12-S15 offline adjudication and provenance sealing",
       "S16 Corpus Entry assembly and split assignment",
       "S17 Routed-Aside Set construction",
       "S18 corpus freeze and manifest",

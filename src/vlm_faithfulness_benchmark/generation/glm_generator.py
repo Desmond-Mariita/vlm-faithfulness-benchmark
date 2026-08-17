@@ -160,9 +160,7 @@ class GlmGenerator:
         )
         # transformers' factories are untyped upstream; the boundary is
         # confined to these calls (mypy: no-untyped-call/misc).
-        self._processor = AutoProcessor.from_pretrained(  # type: ignore[no-untyped-call]
-            _MODEL_ID, revision=_REVISION
-        )
+        self._processor = AutoProcessor.from_pretrained(_MODEL_ID, revision=_REVISION)
         # Auto class resolves the checkpoint's DECLARED architecture
         # (Glm4vForConditionalGeneration — Flash is DENSE 9B; the MoE class
         # silently fabricated newly-initialized expert weights and OOMed:

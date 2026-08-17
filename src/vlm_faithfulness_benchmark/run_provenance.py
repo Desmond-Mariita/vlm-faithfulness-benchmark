@@ -15,7 +15,7 @@ import platform
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Mapping, cast
 
 __all__ = [
     "ACCEPTANCE_CONTRACT_SCHEMA",
@@ -198,7 +198,9 @@ def _verify_m9_cal50_gate(
     parsed = gate.get("parsed")
     agree = gate.get("agree")
     _require(isinstance(parsed, int) and 0 <= parsed <= 50, "invalid gate parsed count")
+    parsed = cast(int, parsed)
     _require(isinstance(agree, int) and 0 <= agree <= parsed, "invalid gate agreement count")
+    agree = cast(int, agree)
     parseability = round(parsed / 50, 4)
     agreement = round(agree / parsed, 4) if parsed else 0.0
     if parsed:

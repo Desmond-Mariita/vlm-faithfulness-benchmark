@@ -22,11 +22,20 @@ for raw in json.load(open(ROOT / "data/aokvqa/aokvqa_v1p0_val.json"))[:10]:
 print(f"[smoke] {len(records)} records; loading generator …", flush=True)
 t0 = time.time()
 gen = QwenGenerator(image_root=ROOT / "data/coco-smoke")
-print(f"[smoke] model loaded in {time.time()-t0:.0f}s; identity: {gen.identity().key()}", flush=True)
+print(
+    f"[smoke] model loaded in {time.time()-t0:.0f}s; identity: {gen.identity().key()}",
+    flush=True,
+)
 
 ledger = RunLedger(ROOT / "data/runs/smoke-s02.jsonl")
 t1 = time.time()
-result = run_s02(records, gen, gen.identity(), ledger, on_progress=lambda m: print("[smoke]", m, flush=True))
+result = run_s02(
+    records,
+    gen,
+    gen.identity(),
+    ledger,
+    on_progress=lambda m: print("[smoke]", m, flush=True),
+)
 dt = time.time() - t1
 n = max(result["committed"], 1)
 print(f"[smoke] done: {result} in {dt:.0f}s ({dt/n:.1f}s/record)", flush=True)

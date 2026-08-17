@@ -9,8 +9,9 @@ from PIL import Image as PILImage
 from vlm_faithfulness_benchmark.gating.gates import load_pattern_registry
 from vlm_faithfulness_benchmark.gating.pilot import PilotIO, run_pilot_observation
 from vlm_faithfulness_benchmark.gating.regimes import wrong_image_partner_index
-from vlm_faithfulness_benchmark.generation.qwen_generator import QwenGenerator
+from vlm_faithfulness_benchmark.generation.harness import run_s02
 from vlm_faithfulness_benchmark.generation.identity import InstanceId
+from vlm_faithfulness_benchmark.generation.qwen_generator import QwenGenerator
 from vlm_faithfulness_benchmark.ingestion.aokvqa import SourceRecord, normalize_aokvqa
 from vlm_faithfulness_benchmark.run_ledger import RunLedger
 
@@ -20,7 +21,9 @@ LOG = ROOT / "data/runs/pilot-progress.log"
 PILOT_N = 500
 AGREEMENT_GATE = 0.8
 
+
 def log(msg: str) -> None:
+    """Append one timestamped progress message to stdout and the run log."""
     line = f"{time.strftime('%H:%M:%S')} {msg}"
     print(line, flush=True)
     with open(LOG, "a") as fh:
@@ -55,7 +58,6 @@ log("validation gate PASSED — starting observation rerun")
 # (R3 working as intended). Greedy decoding => tuples should reproduce
 # byte-identically; verified against the v1 ledger below as determinism
 # evidence.
-from vlm_faithfulness_benchmark.generation.harness import run_s02
 s02_ledger = RunLedger(ROOT / "data/runs/pilot-s02-v2.jsonl")
 t0 = time.time()
 r1 = run_s02(records, gen, gen_id, s02_ledger)
@@ -74,10 +76,14 @@ old.close()
 s02_payloads = {k.removesuffix("::output_tuple"): s02_ledger.payload(k)
                 for k in s02_ledger.keys()}
 
+
 def image_path(rec: SourceRecord) -> Path:
+    """Resolve the downloaded COCO image path for one source record."""
     return IMG_DIR / f"{int(rec.image_ref.removeprefix('coco/')):012d}.jpg"
 
+
 def load_image(rec: SourceRecord) -> np.ndarray:
+    """Load one source image as an RGB uint8 array."""
     return np.asarray(PILImage.open(image_path(rec)).convert("RGB"), dtype=np.uint8)
 
 io = PilotIO(
@@ -97,7 +103,10 @@ io = PilotIO(
 obs_ledger = RunLedger(ROOT / "data/runs/pilot-obs-v2.jsonl")
 t1 = time.time()
 done = [0]
+
+
 def progress(m: str) -> None:
+    """Log every twenty-fifth newly committed observation."""
     done[0] += 1
     if done[0] % 25 == 0:
         log(f"obs-v2 {done[0]} committed ({(time.time()-t1)/done[0]:.0f}s/record)")
@@ -106,5 +115,6 @@ r2 = run_pilot_observation(
     on_progress=progress,
 )
 log(f"obs-v2: {r2} in {(time.time()-t1)/3600:.2f}h")
-s02_ledger.close(); obs_ledger.close()
+s02_ledger.close()
+obs_ledger.close()
 log("PILOT V2 OBSERVATION COMPLETE")

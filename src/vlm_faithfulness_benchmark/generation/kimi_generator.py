@@ -134,7 +134,7 @@ class KimiGenerator:
         self._torch = torch
         self._image_root = image_root
         self._quantized = load_in_8bit
-        self._processor = AutoProcessor.from_pretrained(  # type: ignore[no-untyped-call]
+        self._processor = AutoProcessor.from_pretrained(
             _MODEL_ID, revision=_REVISION, trust_remote_code=True
         )
         # With output_loading_info=True from_pretrained returns a 2-tuple;
@@ -147,7 +147,7 @@ class KimiGenerator:
                 _MODEL_ID,
                 revision=_REVISION,
                 trust_remote_code=True,
-                quantization_config=BitsAndBytesConfig(load_in_8bit=True),  # type: ignore[no-untyped-call]
+                quantization_config=BitsAndBytesConfig(load_in_8bit=True),
                 device_map="cuda:0",
                 output_loading_info=True,
             )

@@ -37,7 +37,7 @@ def instrument_provenance() -> dict[str, str]:
     Includes the bert-score library version (review F3: the instrument
     revision must be pinned in evidence, not assumed).
     """
-    import bert_score  # type: ignore[import-untyped]
+    import bert_score
 
     return {"instrument": DRIFT_INSTRUMENT_ID, "bert_score_version": str(bert_score.__version__)}
 

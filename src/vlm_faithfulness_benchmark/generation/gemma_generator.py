@@ -179,9 +179,7 @@ class GemmaGenerator:
         self._image_root = image_root
         # transformers' Auto* factories are untyped upstream; the boundary is
         # confined to these calls (mypy: no-untyped-call/misc).
-        self._processor = AutoProcessor.from_pretrained(  # type: ignore[no-untyped-call]
-            _MODEL_ID, revision=_REVISION
-        )
+        self._processor = AutoProcessor.from_pretrained(_MODEL_ID, revision=_REVISION)
         # Class pinned to the model card's documented entry point for the
         # encoder-free architecture. With output_loading_info=True
         # from_pretrained returns a 2-tuple; upstream stubs don't model that.
@@ -369,7 +367,7 @@ class GemmaGenerator:
         pil = self._resolve_image(record, image)
         inputs = self._process(pil, build_prompt(record), reply=None)
         with self._torch.inference_mode():
-            generated = self._model.generate(  # type: ignore[misc]
+            generated = self._model.generate(
                 **inputs,
                 do_sample=False,
                 num_beams=1,

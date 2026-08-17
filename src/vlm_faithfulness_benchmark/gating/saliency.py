@@ -64,7 +64,7 @@ class SaliencyGrid:
     def occlude_cell(self, image: Image, row: int, col: int) -> Image:
         """Return a copy of ``image`` with one cell zeroed (the sweep input)."""
         top, left, bottom, right = self.cell_box(row, col)
-        out = image.copy()
+        out: Image = image.copy()
         out[top:bottom, left:right] = 0
         return out
 

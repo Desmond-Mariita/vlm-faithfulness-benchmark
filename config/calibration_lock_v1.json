@@ -1,0 +1,89 @@
+{
+  "schema": "vlm-faithfulness-calibration-lock-v1",
+  "id": "m8-final-calibration-v1",
+  "status": "accepted",
+  "condition_a": {
+    "k": 3,
+    "rule": "flip_count >= k",
+    "source_role": "prereg-v3"
+  },
+  "condition_b": {
+    "instrument": "jaccard-content-v1",
+    "theta_b": 0.7558573853989813,
+    "rule": "targeted_drift >= theta_b",
+    "tokenizer_regex": "[a-z']+",
+    "normalization": "lowercase",
+    "collection": "set",
+    "empty_union_policy": "conformance-error",
+    "stopwords": {
+      "path": "config/stopwords_v1.txt",
+      "sha256": "cc8737d5b5eb3580026695487b43b0e38a786193a93fe5600e27c253cdec7860"
+    },
+    "threshold_source_role": "confirm-gate-result"
+  },
+  "saliency": {
+    "floor": 0.625,
+    "route_e5_rule": "max_drop < floor",
+    "equality_is_locatable": true,
+    "source_role": "confirm-observations"
+  },
+  "coherence": {
+    "registry": {
+      "path": "config/p2_patterns_v1.txt",
+      "sha256": "71824f8deb871b022ec359d35232c2040dc161eae1431deab893fcd18e060750"
+    }
+  },
+  "source_artifacts": [
+    {
+      "role": "prereg-v1",
+      "path": "config/prereg_v1.json",
+      "sha256": "303eee5cb066ee3e20e58b29f6acbe46ecd23edbe1192668ae0a1fb455ee1720"
+    },
+    {
+      "role": "prereg-v2",
+      "path": "config/prereg_v2.json",
+      "sha256": "27b2e1fb4356e42b53241698bd456728987563aaa60fe96ed80fb44c3136b3b8"
+    },
+    {
+      "role": "prereg-v3",
+      "path": "config/prereg_v3.json",
+      "sha256": "e94d82403309a6948dfe7ff5119fb25f9c17b77ccf018b13db9e410f508b7879"
+    },
+    {
+      "role": "stopwords",
+      "path": "config/stopwords_v1.txt",
+      "sha256": "cc8737d5b5eb3580026695487b43b0e38a786193a93fe5600e27c253cdec7860"
+    },
+    {
+      "role": "coherence-registry",
+      "path": "config/p2_patterns_v1.txt",
+      "sha256": "71824f8deb871b022ec359d35232c2040dc161eae1431deab893fcd18e060750"
+    },
+    {
+      "role": "confirm-gate-result",
+      "path": "data/runs/confirm_gate_result.json",
+      "sha256": "4fc67b57d3c11be00eb7ae73323c793c61f6883bc0918eb6654afbe341668faa"
+    },
+    {
+      "role": "confirm-observations",
+      "path": "data/runs/confirm-obs.jsonl",
+      "sha256": "91a2e4b5d25238604219c5ed1fcb0245f2e375bfdf1fe9cd7e54310200374225"
+    },
+    {
+      "role": "label-specification",
+      "path": "docs/06_Label_Specification.md",
+      "sha256": "61ff6b37ad49b1124508b901153fce8c13d82b935ccf36079f53da9c70994dd4"
+    },
+    {
+      "role": "generation-pipeline",
+      "path": "docs/07_Label_Generation_Pipeline.md",
+      "sha256": "d855d0793f5a7aa8d3b2cbbcbc42c9d25f076f34885cecd10211c5cd1de7be4b"
+    },
+    {
+      "role": "superseded-k-calibration",
+      "path": "data/runs/k_calibration_result.json",
+      "sha256": "706d995840c970ee544b62ac7de3d8bf6d0ba4167487770da8fc977386a0dc12",
+      "disposition": "descriptive-only; production use forbidden"
+    }
+  ]
+}

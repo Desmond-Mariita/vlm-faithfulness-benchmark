@@ -15,7 +15,11 @@ from vlm_faithfulness_benchmark.gating.condition_a import (
     ConditionAVerdict,
     RegimeReading,
 )
-from vlm_faithfulness_benchmark.gating.condition_b import determine_condition_b
+from vlm_faithfulness_benchmark.gating.condition_b import (
+    compute_drift,
+    content_words,
+    determine_condition_b,
+)
 from vlm_faithfulness_benchmark.gating.controls import coherence_screen, evaluate_p6
 from vlm_faithfulness_benchmark.gating.gates import load_pattern_registry
 from vlm_faithfulness_benchmark.labeling.projection import project_state_and_label
@@ -65,8 +69,24 @@ class TestConditionB:
 
     def test_uncalibrated_theta_rejected(self) -> None:
         """An uncalibrated threshold must never label (RIP §5.2)."""
-        with pytest.raises(AssertionError, match="calibration"):
+        with pytest.raises(RuntimeError, match="theta_b"):
             determine_condition_b(0.5, 0.0)
+
+    def test_registered_content_word_jaccard(self) -> None:
+        """The final instrument is set Jaccard over registered content tokens."""
+        stopwords = frozenset({"the", "and", "is"})
+        assert content_words("The red, red cat's tail is here.", stopwords) == {
+            "red",
+            "cat's",
+            "tail",
+            "here",
+        }
+        assert compute_drift("red cat and dog", "red cat and bird", stopwords) == 0.5
+
+    def test_empty_content_union_fails_closed(self) -> None:
+        """The unregistered empty-union score is never invented."""
+        with pytest.raises(RuntimeError, match="empty content-word union"):
+            compute_drift("the and", "and the", frozenset({"the", "and"}))
 
 
 class TestP6Controls:
@@ -127,6 +147,30 @@ class TestP6Controls:
             control_edit_drift=0.2, control_edit_applicable=True, theta_b=0.2,
         )
         assert not det.holds
+
+    def test_missing_applicable_control_drift_fails_p6(self) -> None:
+        """A missing control generation is E6 evidence, not a caller crash."""
+        det = evaluate_p6(
+            a_is_true_branch=True,
+            baseline_chosen_index=0,
+            hflip_reading=HFLIP_HELD,
+            qtype_spatial_lateral=False,
+            answer_readings_evaluable=True,
+            rationale_readings_evaluable=False,
+            coherence=coherence_screen(
+                BASE_RATIONALE, "a red umbrella held against rainfall", REGISTRY
+            ),
+            control_edit_drift=None,
+            control_edit_applicable=True,
+            theta_b=0.2,
+        )
+        assert not det.holds
+        assert any(
+            result.control == "control-edit"
+            and result.status == "fail"
+            and "non-evaluable" in result.evidence
+            for result in det.results
+        )
 
     def test_incoherent_counterfactual_fails_coherence(self) -> None:
         """FX-E6-INCOHERENT: gibberish/short output fails the pinned screen."""

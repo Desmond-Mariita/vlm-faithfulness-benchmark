@@ -1,0 +1,84 @@
+{
+  "schema": "vlm-faithfulness-m9-glm-adjudication-contract-v1",
+  "id": "m9-glm-s12-s15-v1",
+  "status": "review-pending",
+  "generator_identity": "{\"decoding\":\"greedy;beams=1;max_new_tokens=256;enable_thinking=False\",\"dtype\":\"bfloat16\",\"extraction_contract\":\"aokvqa-mc-glm-v2\",\"image_preprocessing\":\"pil-rgb-native\",\"model\":\"zai-org/GLM-4.6V-Flash\",\"option_scorer\":\"option-letter-logprob-glm-v1\",\"prompt_template\":\"aokvqa-mc-glm-v2\",\"revision\":\"411bb4d77144a3f03accbf4b780f5acb8b7cde4e\"}",
+  "records": 18194,
+  "inputs": {
+    "canonical_s02_sha256": "e2f35a869cc874504c4942f30804048ac40de59caaafe8f2c7528262b066408e",
+    "merged_observations_sha256": "861f33b4e4b5cec34ef82c414232c45caf3b717e1fefc73e6003c4f6c4884ede",
+    "merge_validation_report_sha256": "67ede40a6fde03a8def41bbe9c00a3defeb211eaed07738fdc64d02737c4f9e5",
+    "calibration_lock": {
+      "path": "config/calibration_lock_v1.json",
+      "sha256": "9f47befb48039ee705d3266cc856789c926281f8db7f04c8e75b821607299ba5"
+    }
+  },
+  "baseline_binding": {
+    "accepted_legacy_prefix": {
+      "start": 0,
+      "end": 4053,
+      "mode": "accepted-legacy-sidecar",
+      "evidence": {
+        "sidecar_sha256": "e834f8f8f815b34cb94628197353ca0d0fa53774150b27edbc0650ad5e8947ac",
+        "verification_manifest_sha256": "62e6f7cbf475e9b8f75ff1b8ff39e49ef38429c3e8e2d5eb2c832528783e44e3"
+      }
+    },
+    "remaining_mode": "in-row"
+  },
+  "observation_segments": [
+    {
+      "start": 0,
+      "end": 3969,
+      "mode": "external",
+      "manifest_sha256": "39fbe5dd6cc0b2d5d2c91c2459781e6f5489a4d6e23533c9d9e63bdb49ea80f7"
+    },
+    {
+      "start": 3969,
+      "end": 4053,
+      "mode": "external",
+      "manifest_sha256": "39fbe5dd6cc0b2d5d2c91c2459781e6f5489a4d6e23533c9d9e63bdb49ea80f7"
+    },
+    {
+      "start": 4053,
+      "end": 6154,
+      "mode": "external",
+      "manifest_sha256": "39fbe5dd6cc0b2d5d2c91c2459781e6f5489a4d6e23533c9d9e63bdb49ea80f7"
+    },
+    {
+      "start": 6154,
+      "end": 7577,
+      "mode": "in-row",
+      "run_id": "replacement-20260816T042649Z-a",
+      "run_provenance_digest": "2376206eb82c533946f4de4d19678ffbfc964cf0e3d68eca689e437242e2c506",
+      "manifest_sha256": "2376206eb82c533946f4de4d19678ffbfc964cf0e3d68eca689e437242e2c506",
+      "launch_contract_sha256": "50c45e706e039e98545cf08146909d3b815dc47238a1fa4df87adca987365990"
+    },
+    {
+      "start": 7577,
+      "end": 9000,
+      "mode": "in-row",
+      "run_id": "replacement-20260816T042649Z-b",
+      "run_provenance_digest": "89c66678abc3bd730b63f6130795bcecb4ca1c3da1d47fc6d322e14251fc7dde",
+      "manifest_sha256": "89c66678abc3bd730b63f6130795bcecb4ca1c3da1d47fc6d322e14251fc7dde",
+      "launch_contract_sha256": "50c45e706e039e98545cf08146909d3b815dc47238a1fa4df87adca987365990"
+    },
+    {
+      "start": 9000,
+      "end": 13600,
+      "mode": "external",
+      "manifest_sha256": "24268d463c9c88de6c719f52d8f794f7e5f0a34ae878de115194b7703a150897"
+    },
+    {
+      "start": 13600,
+      "end": 18194,
+      "mode": "external",
+      "manifest_sha256": "24268d463c9c88de6c719f52d8f794f7e5f0a34ae878de115194b7703a150897"
+    }
+  ],
+  "output": {
+    "directory_schema": "vlm-faithfulness-m9-adjudication-bundle-v1",
+    "ledger_key_suffix": "::sealed_provenance",
+    "overwrite": "forbidden",
+    "commit": "atomic-directory-rename"
+  }
+}

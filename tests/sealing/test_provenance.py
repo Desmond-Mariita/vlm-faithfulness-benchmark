@@ -43,6 +43,16 @@ class TestAccretion:
         with pytest.raises(TypeError):
             entry.payload["reading"] = 0.99  # type: ignore[index]
 
+    def test_nested_entry_payload_is_read_only(self) -> None:
+        """CC11 applies recursively, not only to the top-level mapping."""
+        entry = ProvenanceEntry(
+            "observation", "S06", {"nested": {"scores": [1.0, 2.0]}}
+        )
+        nested = entry.payload["nested"]
+        with pytest.raises(TypeError):
+            nested["scores"] = [9.0]  # type: ignore[index]
+        assert entry.as_dict()["payload"] == {"nested": {"scores": [1.0, 2.0]}}
+
 
 class TestSealing:
     """Sealed-phase behavior (S14/S15, ADR-002 N1/N4, CC2, DM-T4)."""
@@ -123,3 +133,12 @@ class TestResolutionShape:
         """DM-T4/S14-vers: sealing without governing versions is rejected."""
         with pytest.raises(AssertionError):
             SealedResolution("S3", "faithful", None, None, {})
+
+    def test_sealed_serialization_is_detached(self) -> None:
+        """The on-disk shape is complete and cannot mutate the source artifact."""
+        provenance = InterventionalProvenance(IID)
+        provenance.append(_obs())
+        provenance.seal(SealedResolution("S3", "faithful", None, None, VERSIONS))
+        serialized = provenance.as_dict()
+        serialized["entries"][0]["payload"]["reading"] = 9.0
+        assert provenance.entries[0].payload["reading"] == 0.42

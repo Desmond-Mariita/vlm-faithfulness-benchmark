@@ -1,116 +1,119 @@
-"""Drift instrument and the one-sided Condition B determination (S11; RIP §2.4/§2.5).
+"""Registered content-word Jaccard drift and Condition B (S11).
 
-Matrix rows: S11-post, S11-track, BR-S2/S3, LS-4a; RIP-1.0.0 §2.5.
-
-Condition B is **one-sided** (review-hardened RIP §2.5): B = tracks iff the
-targeted-edit drift ≥ θ_B. Attribution of the signal to the located
-evidence is P6's job (§2.6(d)), evaluated before B ever runs — by the time
-S11 executes, its input is determinate by construction (`06` §8.2: no
-inconclusive B outcome exists).
-
-The drift instrument is BERTScore-F1 (``roberta-large``, pinned revision)
-between the exact baseline rationale and the counterfactual rationale;
-drift = 1 − F1 (RIP §2.4). It is a similarity instrument producing the CC5
-graded reading — it never scores plausibility, grounding, or agreement with
-the image or any label (CC1 / `06` I2 defense recorded in the RIP). The
-heavy model loads lazily; the determination logic is pure.
+The final preregistration selects ``jaccard-content-v1``. Content words are
+the unique lowercased ``[a-z']+`` tokens after removal of the pinned stopword
+set. Drift is one minus set Jaccard similarity. Condition B is one-sided:
+the rationale tracks iff targeted drift is at least the frozen threshold.
 """
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
+from pathlib import Path
 
 __all__ = [
+    "CONTENT_TOKEN_PATTERN",
     "DRIFT_INSTRUMENT_ID",
     "ConditionBDetermination",
     "compute_drift",
+    "content_words",
     "determine_condition_b",
+    "instrument_provenance",
+    "load_stopwords",
 ]
 
-#: The pinned drift instrument identity (recorded in provenance).
-DRIFT_INSTRUMENT_ID = "bertscore-f1;roberta-large;idf=false;rescale=false;drift=1-F1"
+DRIFT_INSTRUMENT_ID = "jaccard-content-v1"
+CONTENT_TOKEN_PATTERN = r"[a-z']+"
+_CONTENT_TOKEN_RE = re.compile(CONTENT_TOKEN_PATTERN)
 
 
-def instrument_provenance() -> dict[str, str]:
-    """Return the runtime instrument identity for provenance recording.
+def load_stopwords(path: Path) -> frozenset[str]:
+    """Load and validate the pinned whitespace-delimited stopword set.
 
-    Includes the bert-score library version (review F3: the instrument
-    revision must be pinned in evidence, not assumed).
+    Args:
+        path: Path to ``config/stopwords_v1.txt``.
+
+    Returns:
+        The immutable stopword set.
+
+    Raises:
+        RuntimeError: If the file is missing, empty, duplicated, or contains
+            a token outside the registered lowercase token language.
     """
-    import bert_score
+    if not path.is_file():
+        raise RuntimeError(f"pinned stopword file missing: {path}")
+    words = path.read_text(encoding="utf-8").split()
+    if not words:
+        raise RuntimeError("pinned stopword set is empty")
+    if len(words) != len(set(words)):
+        raise RuntimeError("pinned stopword set contains duplicates")
+    if any(re.fullmatch(CONTENT_TOKEN_PATTERN, word) is None for word in words):
+        raise RuntimeError("stopword outside the registered lowercase token language")
+    return frozenset(words)
 
-    return {"instrument": DRIFT_INSTRUMENT_ID, "bert_score_version": str(bert_score.__version__)}
+
+def content_words(text: str, stopwords: frozenset[str]) -> frozenset[str]:
+    """Return the registered unique content-word set for one rationale."""
+    return frozenset(_CONTENT_TOKEN_RE.findall(text.lower())).difference(stopwords)
+
+
+def instrument_provenance(stopwords_sha256: str) -> dict[str, str]:
+    """Return the complete machine-readable instrument identity."""
+    return {
+        "instrument": DRIFT_INSTRUMENT_ID,
+        "tokenizer_regex": CONTENT_TOKEN_PATTERN,
+        "normalization": "lowercase",
+        "collection": "set",
+        "stopwords_sha256": stopwords_sha256,
+        "drift": "1-|A_intersect_B|/|A_union_B|",
+    }
 
 
 @dataclass(frozen=True, slots=True)
 class ConditionBDetermination:
-    """The S11 determination with its reconstructable evidence (CC5).
-
-    Attributes:
-        tracks: The binary verdict (`06` §4: tracks / does-not-track).
-        targeted_drift: The graded reading consumed.
-        theta_b: The calibrated threshold consumed.
-    """
+    """The S11 binary verdict and its reconstructable graded reading."""
 
     tracks: bool
     targeted_drift: float
     theta_b: float
 
 
-def compute_drift(baseline_rationale: str, counterfactual_rationale: str) -> float:
-    """Measure rationale drift under the pinned instrument (RIP §2.4).
+def compute_drift(
+    baseline_rationale: str,
+    counterfactual_rationale: str,
+    stopwords: frozenset[str],
+) -> float:
+    """Compute registered content-word Jaccard drift.
 
-    LaTeX is above the return expression; the instrument compares the two
-    texts and nothing else.
-
-    Args:
-        baseline_rationale: The exact digest-verified baseline rationale
-            (CC4 — never regenerated).
-        counterfactual_rationale: The rationale emitted on the edited input.
-
-    Returns:
-        drift in [0, 1]-ish (1 − BERTScore-F1; F1 can dip slightly negative
-        on pathological pairs, so drift may slightly exceed 1).
+    Empty raw rationales are P6 integrity failures and never reach this
+    function. An empty content-word union has no registered numerical value,
+    so it is a fail-closed conformance error rather than an invented score.
+    The accepted calibration and M9 GLM ledgers contain no such pair.
 
     Raises:
-        AssertionError: On empty inputs — an absent counterfactual rationale
-            is a P6 readings-integrity matter (§2.6(b′)), never scored here.
+        RuntimeError: On empty raw text or an empty content-word union.
     """
-    assert baseline_rationale.strip(), "empty baseline rationale reaches S11 only by defect"
-    assert counterfactual_rationale.strip(), (
-        "absent counterfactual rationale is a P6 (b′) matter, not a drift input"
-    )
-    from bert_score import score as bertscore  # heavy; typed via the module ignore
-
-    _, _, f1 = bertscore(
-        [counterfactual_rationale], [baseline_rationale], model_type="roberta-large",
-        lang="en", idf=False, rescale_with_baseline=False,
-    )
-    # LaTeX: d = 1 - F1_{BERTScore}(r_{cf}, r_{base})
-    return float(1.0 - f1[0].item())
+    if not baseline_rationale.strip():
+        raise RuntimeError("empty baseline rationale reaches drift only by defect")
+    if not counterfactual_rationale.strip():
+        raise RuntimeError("empty counterfactual rationale is a P6 integrity failure")
+    baseline = content_words(baseline_rationale, stopwords)
+    counterfactual = content_words(counterfactual_rationale, stopwords)
+    union = baseline | counterfactual
+    if not union:
+        raise RuntimeError("jaccard-content-v1 has an empty content-word union")
+    return 1.0 - (len(baseline & counterfactual) / len(union))
 
 
 def determine_condition_b(targeted_drift: float, theta_b: float) -> ConditionBDetermination:
-    """Determine Condition B, one-sided (RIP §2.5).
-
-    Args:
-        targeted_drift: Drift under the evidence-matched edit (S09 reading).
-        theta_b: The calibrated threshold (RIP §5.2; the legacy 0.3 is
-            pre-registered as NOT inherited — any value must come from the
-            calibration record).
-
-    Returns:
-        The determination; deterministic and total for finite inputs.
-
-    Raises:
-        AssertionError: On non-finite drift or a non-positive θ_B (an
-            uncalibrated threshold must never label).
-    """
-    assert targeted_drift == targeted_drift and abs(targeted_drift) != float("inf"), (
-        "non-finite drift is a conformance error"
-    )
-    assert theta_b > 0.0, "theta_b must come from the §5.2 calibration record"
-    # LaTeX: B = [\, d_{targeted} \ge \theta_B \,]
+    """Determine Condition B using the registered inclusive threshold."""
+    if not (0.0 <= targeted_drift <= 1.0):
+        raise RuntimeError("jaccard-content-v1 drift must be finite and in [0, 1]")
+    if not (0.0 < theta_b <= 1.0):
+        raise RuntimeError("theta_b must be a calibrated value in (0, 1]")
     return ConditionBDetermination(
-        tracks=targeted_drift >= theta_b, targeted_drift=targeted_drift, theta_b=theta_b
+        tracks=targeted_drift >= theta_b,
+        targeted_drift=targeted_drift,
+        theta_b=theta_b,
     )

@@ -136,6 +136,9 @@ def evaluate_p6(
         AssertionError: If A-true-branch controls are missing on the A-true
             branch — a caller defect, not a control failure.
     """
+    assert math.isfinite(theta_b) and 0.0 < theta_b <= 1.0, (
+        "theta_b must be a calibrated value in (0, 1]"
+    )
     results: list[ControlResult] = []
 
     if qtype_spatial_lateral:
@@ -176,15 +179,23 @@ def evaluate_p6(
                 ControlResult("control-edit", "inapplicable", "no disjoint placement exists")
             )
         else:
-            assert control_edit_drift is not None, "caller defect: applicable control needs drift"
-            failed = control_edit_drift >= theta_b
-            results.append(
-                ControlResult(
-                    "control-edit",
-                    "fail" if failed else "pass",
-                    f"control drift {control_edit_drift:.4f} vs theta_b {theta_b:.4f}",
+            if control_edit_drift is None:
+                results.append(
+                    ControlResult("control-edit", "fail", "control drift non-evaluable")
                 )
-            )
+            else:
+                assert math.isfinite(control_edit_drift) and 0.0 <= control_edit_drift <= 1.0, (
+                    "control drift must be a finite jaccard-content-v1 reading"
+                )
+                failed = control_edit_drift >= theta_b
+                results.append(
+                    ControlResult(
+                        "control-edit",
+                        "fail" if failed else "pass",
+                        f"control drift {control_edit_drift:.17g} "
+                        f"vs theta_b {theta_b:.17g}",
+                    )
+                )
 
     holds = all(r.status != "fail" for r in results)
     return P6Determination(holds=holds, results=tuple(results))

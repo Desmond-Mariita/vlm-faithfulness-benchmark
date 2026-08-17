@@ -32,6 +32,24 @@ _LABELLED_ROWS: frozenset[tuple[str, str, str | None]] = frozenset(
 )
 
 
+def _freeze(value: Any) -> Any:
+    """Recursively freeze JSON-shaped provenance values."""
+    if isinstance(value, Mapping):
+        return MappingProxyType({str(key): _freeze(item) for key, item in value.items()})
+    if isinstance(value, (list, tuple)):
+        return tuple(_freeze(item) for item in value)
+    return value
+
+
+def _plain(value: Any) -> Any:
+    """Return a detached JSON-serializable copy of a frozen value."""
+    if isinstance(value, Mapping):
+        return {str(key): _plain(item) for key, item in value.items()}
+    if isinstance(value, tuple):
+        return [_plain(item) for item in value]
+    return value
+
+
 @dataclass(frozen=True, slots=True)
 class ProvenanceEntry:
     """One append-only accretion: an observation or a gate determination.
@@ -62,7 +80,11 @@ class ProvenanceEntry:
         assert re.fullmatch(r"S\d{2}", self.producer), (
             f"producer must be a stage id (CC3), got {self.producer!r}"
         )
-        object.__setattr__(self, "payload", MappingProxyType(dict(self.payload)))
+        object.__setattr__(self, "payload", _freeze(self.payload))
+
+    def as_dict(self) -> dict[str, Any]:
+        """Serialize this entry as a detached canonical JSON shape."""
+        return {"kind": self.kind, "producer": self.producer, "payload": _plain(self.payload)}
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,6 +130,16 @@ class SealedResolution:
             )
         assert self.spec_versions, "sealing MUST record governing spec versions (DM-T4)"
         object.__setattr__(self, "spec_versions", MappingProxyType(dict(self.spec_versions)))
+
+    def as_dict(self) -> dict[str, Any]:
+        """Serialize the labelled-XOR-routed resolution."""
+        return {
+            "state": self.state,
+            "label": self.label,
+            "reason_code": self.reason_code,
+            "e_code": self.e_code,
+            "spec_versions": dict(self.spec_versions),
+        }
 
 
 class InterventionalProvenance:
@@ -187,3 +219,17 @@ class InterventionalProvenance:
                 "ADR-003: an E1 record carries no Intervention Records"
             )
         self._resolution = resolution
+
+    def as_dict(self) -> dict[str, Any]:
+        """Serialize a sealed artifact without exposing mutable internals.
+
+        Raises:
+            AssertionError: If called before the exactly-once resolution.
+        """
+        assert self.sealed, "cannot serialize observational provenance as sealed"
+        return {
+            "instance": self.instance.key(),
+            "phase": "sealed",
+            "entries": [entry.as_dict() for entry in self.entries],
+            "resolution": self.resolution.as_dict(),
+        }

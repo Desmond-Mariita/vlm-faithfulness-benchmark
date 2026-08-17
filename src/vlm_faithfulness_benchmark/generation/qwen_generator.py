@@ -272,13 +272,14 @@ class QwenGenerator:
         import numpy as np
         from PIL import Image
 
+        pil: object
         if image_override is None:
             image_id = record.image_ref.removeprefix("coco/")
             pil = Image.open(self._image_root / f"{int(image_id):012d}.jpg").convert("RGB")
         elif isinstance(image_override, np.ndarray):
             pil = Image.fromarray(image_override)
         else:
-            pil = image_override  # type: ignore[assignment]
+            pil = image_override
         scores: list[float] = []
         prompt = build_prompt(record)
         for i in range(len(record.options)):

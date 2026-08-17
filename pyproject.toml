@@ -32,8 +32,18 @@ strict = true
 files = ["src"]
 
 [[tool.mypy.overrides]]
-module = ["bert_score", "bert_score.*", "torch", "torch.*", "transformers", "transformers.*"]
+module = [
+    "bert_score",
+    "bert_score.*",
+    "PIL",
+    "PIL.*",
+    "torch",
+    "torch.*",
+    "transformers",
+    "transformers.*",
+]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]

@@ -138,6 +138,7 @@ def load_calibration_lock(path: Path, repo_root: Path) -> CalibrationLock:
         "stopwords",
         "coherence-registry",
         "confirm-gate-result",
+        "confirm-s02",
         "confirm-observations",
         "label-specification",
         "generation-pipeline",

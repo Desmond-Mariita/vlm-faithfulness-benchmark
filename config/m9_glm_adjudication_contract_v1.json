@@ -10,7 +10,7 @@
     "merge_validation_report_sha256": "67ede40a6fde03a8def41bbe9c00a3defeb211eaed07738fdc64d02737c4f9e5",
     "calibration_lock": {
       "path": "config/calibration_lock_v1.json",
-      "sha256": "9f47befb48039ee705d3266cc856789c926281f8db7f04c8e75b821607299ba5"
+      "sha256": "1ed9dae3c61503bac6f78a0329123bb7ee33be22b32bf40c2943d42cb3110c3a"
     }
   },
   "baseline_binding": {

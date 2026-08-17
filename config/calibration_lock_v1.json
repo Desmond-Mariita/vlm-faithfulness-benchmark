@@ -65,6 +65,11 @@
       "sha256": "4fc67b57d3c11be00eb7ae73323c793c61f6883bc0918eb6654afbe341668faa"
     },
     {
+      "role": "confirm-s02",
+      "path": "data/runs/confirm-s02.jsonl",
+      "sha256": "0b3e8f997e62ebb5254a4f867b49bbd4126914fe70f2c41e1cbe97e3cda571e9"
+    },
+    {
       "role": "confirm-observations",
       "path": "data/runs/confirm-obs.jsonl",
       "sha256": "91a2e4b5d25238604219c5ed1fcb0245f2e375bfdf1fe9cd7e54310200374225"

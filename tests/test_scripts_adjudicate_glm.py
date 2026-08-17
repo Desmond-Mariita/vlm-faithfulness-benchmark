@@ -260,13 +260,13 @@ def test_bundle_success_manifest_and_determinism(tmp_path: Path) -> None:
     ).read_bytes()
     assert (first / "summary.json").read_bytes() == (second / "summary.json").read_bytes()
     assert _sha256(first / "sealed-provenance.jsonl") == (
-        "c7f7f5472812dabdac714282cdd80a1db81ba11f012a1ff3dc000936ef93f9b9"
+        "83a825d83f5ae48d256678862306a642c1579192cb555eee9344fea849e8bfd5"
     )
     assert _sha256(first / "summary.json") == (
-        "6a3ebb8011bea9da1609eb7d2b09622ba78fede7cf4b43ad31f26cd19bdccc22"
+        "07c87d67c8394bf4b23ac350b2f2940a929aa075d4edac511864cbfa4c569c4a"
     )
     assert _sha256(first / "manifest.json") == (
-        "ba8c12e2253b2d39001734da4cfba0f41f9674b858f2cb3316489ac64c506d4b"
+        "29be444d667ae83c459b60d4b5431b903649172375071b9a32c40fb6fc147a39"
     )
     manifest = json.loads((first / "manifest.json").read_text())
     for filename, evidence in manifest["outputs"].items():
